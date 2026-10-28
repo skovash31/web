@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BirdQuestX - Multiplayer Battle</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+    <!-- Character Selection Screen -->
+    <div id="character-screen" class="screen">
+        <img src="../../BQX assets/Main Page/BirdQuestX Title.png" alt="BirdQuestX" class="title-logo">
+        <h2 class="select-title">Choose Your Bird</h2>
+        <div class="character-grid">
+            <div class="character-card" data-character="chicken">
+                <img src="../../BQX assets/Game Assets/Birds/Chicken/Chicken Idle.png" alt="Chicken">
+                <p>Chicken</p>
+            </div>
+        </div>
+        <button id="confirm-character-btn" class="game-btn" disabled>Confirm Selection</button>
+    </div>
+
+    <!-- Connection Menu Screen -->
+    <div id="menu-screen" class="screen" style="display: none;">
+        <img src="../../BQX assets/Main Page/BirdQuestX Title.png" alt="BirdQuestX" class="title-logo">
+        <h2>Multiplayer Battle</h2>
+        <div class="menu-options">
+            <div class="option-group">
+                <h3>Join with Code</h3>
+                <input type="text" id="room-code" placeholder="4-letter code" maxlength="4" autocapitalize="characters">
+                <button id="join-code-btn" class="game-btn">Join Room</button>
+            </div>
+            <div class="option-group">
+                <h3>Create Room</h3>
+                <button id="create-room-btn" class="game-btn">Create Room</button>
+            </div>
+            <div class="option-group">
+                <h3>Random Match</h3>
+                <button id="random-match-btn" class="game-btn">Find Random Player</button>
+            </div>
+        </div>
+        <div id="connection-status"></div>
+        <div id="your-room-code"></div>
+        <button id="back-to-character-btn" class="back-btn">Back to Character Select</button>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen" style="display: none;">
+        <div id="game-info">
+            <div id="player-info">
+                <span id="room-display">Room: </span>
+                <span id="connection-info">Status: Connected</span>
+            </div>
+            <button id="leave-btn" class="game-btn">Leave Game</button>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- Mobile Controls -->
+        <div id="mobile-controls">
+            <div class="dpad">
+                <button class="control-btn up" data-key="w">▲</button>
+                <div class="middle-row">
+                    <button class="control-btn left" data-key="a">◄</button>
+                    <div class="center"></div>
+                    <button class="control-btn right" data-key="d">►</button>
+                </div>
+                <button class="control-btn down" data-key="s">▼</button>
+            </div>
+        </div>
+
+        <div id="action-controls">
+            <button id="attack-btn" class="control-btn attack-btn">⚔</button>
+            <button id="block-btn" class="control-btn block-btn">🛡</button>
+        </div>
+    </div>
+
+    <!-- Audio -->
+    <audio id="main-music" src="../../BQX assets/music/Pixel Feathers.mp3" loop></audio>
+
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <script src="../game.js"></script>
+</body>
+</html>

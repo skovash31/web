@@ -1,0 +1,12 @@
+<script>
+(function() {
+  const allowedReferrer = "https://coolkids.gimkit.shop"; // the URL you want to allow
+  const redirectTo = "https://www.gimkit.shop"; // where to send everyone else
+
+  const referrer = document.referrer;
+
+  if (!referrer.startsWith(allowedReferrer)) {
+    window.location.href = redirectTo;
+  }
+})();
+</script>

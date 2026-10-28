@@ -1,0 +1,11 @@
+body {
+    margin: 0;
+    overflow: hidden
+}
+.title-image {
+    display: block;
+    width: 30vw;
+    max-width: 400px;
+    height: auto;
+    margin: 5vh auto 0;
+}

@@ -1,0 +1,274 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kirby V1</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #fff;
+      background:
+        linear-gradient(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.42)),
+        url("assets/background.png") center / cover fixed no-repeat;
+    }
+
+    main {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      padding: 44px 20px 64px;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(64px, 12vw, 150px);
+      line-height: 0.9;
+      letter-spacing: 0;
+      text-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    }
+
+    button,
+    select,
+    .game-link {
+      font: inherit;
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      width: min(720px, 100%);
+    }
+
+    .selector {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      width: min(720px, 100%);
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.42);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.38);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+    }
+
+    .selector select {
+      min-height: 46px;
+      flex: 1 1 260px;
+      max-width: 430px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.76);
+      border-radius: 6px;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.68);
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .selector select:focus-visible {
+      outline: 2px solid rgba(255, 255, 255, 0.9);
+      outline-offset: 2px;
+    }
+
+    .blank-button,
+    .selector button {
+      min-height: 46px;
+      padding: 10px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.76);
+      border-radius: 6px;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.42);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+      font-size: 17px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+    }
+
+    .blank-button:hover,
+    .blank-button:focus-visible,
+    .selector button:hover,
+    .selector button:focus-visible {
+      transform: translateY(-3px);
+      border-color: #fff;
+      background: rgba(0, 0, 0, 0.56);
+      outline: none;
+    }
+
+    .games {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 20px;
+      width: min(1120px, 100%);
+    }
+
+    .game-link {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
+      min-height: 238px;
+      padding: 14px;
+      color: #fff;
+      border: 2px solid rgba(255, 255, 255, 0.65);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.42);
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
+      text-decoration: none;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .game-link:hover,
+    .game-link:focus-visible {
+      transform: translateY(-6px);
+      border-color: #fff;
+      background: rgba(0, 0, 0, 0.56);
+      outline: none;
+    }
+
+    .game-link img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 6px;
+      display: block;
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    .game-link span {
+      align-self: center;
+      overflow-wrap: anywhere;
+      font-size: clamp(18px, 2vw, 24px);
+      font-weight: 800;
+      text-shadow: 0 3px 10px rgba(0, 0, 0, 0.55);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Kirby V1</h1>
+     // Idlecat on top
+    <div class="top-actions">
+      <button class="blank-button" type="button" id="open-page-blank">Open Page in about:blank</button>
+    </div>
+
+    <div class="selector">
+      <select id="game-select" aria-label="Game selector"></select>
+      <button type="button" id="play-selected">Play Selected</button>
+    </div>
+
+    <div class="games" id="games"></div>
+  </main>
+
+  <script>
+    const games = [
+      { title: "Slope", url: "edu/slope.html", icon: "edu/slopeicon.jpg", iconAlt: "Slope game icon" },
+      { title: "Eaglercraft", url: "edu/Eaglercraft.html", icon: "edu/minecraft.jpg", iconAlt: "Minecraft logo" },
+      { title: "2048", url: "edu/2048/index.html", icon: "edu/2048/thumb.png", iconAlt: "2048 game icon" },
+      { title: "Among Us", url: "edu/among-us/index.html", icon: "edu/among-us/red.png", iconAlt: "Among Us icon" },
+      { title: "Bloons TD 2", url: "edu/bloons-td-2/index.html", icon: "edu/bloons-td-2/bloonstd2.png", iconAlt: "Bloons TD 2 icon" },
+      { title: "Chrome Dino", url: "edu/chrome-dino/index.html", icon: "edu/chrome-dino/icons/icon-256.png", iconAlt: "Chrome Dino icon" },
+      { title: "Cookie Clicker", url: "edu/cookie-clicker/index.html", icon: "edu/cookie-clicker/cookie1.jpeg", iconAlt: "Cookie Clicker icon" },
+      { title: "Death Run 3D", url: "edu/death-run-3d/index.html", icon: "edu/death-run-3d/img/death.png", iconAlt: "Death Run 3D icon" },
+      { title: "Duck Life 4", url: "edu/ducklife4/index.html", icon: "edu/ducklife4/splash.jpg", iconAlt: "Duck Life 4 icon" },
+      { title: "Flappy Bird", url: "edu/flappy-bird/index.html", icon: "edu/flappy-bird/assets/thumb.png", iconAlt: "Flappy Bird icon" },
+      { title: "Fruit Ninja", url: "edu/fruit-ninja/index.html", icon: "edu/fruit-ninja/thumb.png", iconAlt: "Fruit Ninja icon" },
+      { title: "Geometry Dash", url: "edu/geodash/index.html", icon: "edu/geodash/geoscratchicon.png", iconAlt: "Geometry Dash icon" },
+      { title: "Geometry Dash SubZero", url: "edu/geodash-subzero/index.html", icon: "edu/geodash-subzero/geodash-subzero.png", iconAlt: "Geometry Dash SubZero icon" },
+      { title: "Pac-Man", url: "edu/pacman/index.html", icon: "edu/pacman/thumbnail.png", iconAlt: "Pac-Man icon" },
+      { title: "Subway Surfers", url: "edu/subway-surfers-san-francisco/index.html", icon: "edu/subway-surfers-san-francisco/img/splash.png", iconAlt: "Subway Surfers icon" },
+      { title: "Vex 3", url: "edu/vex3/index.html", icon: "edu/vex3/assets/images/vex-logo.png", iconAlt: "Vex 3 icon" },
+      { title: "Vex 4", url: "edu/vex4/index.html", icon: "edu/vex4/assets/images/cpromo-icon.png", iconAlt: "Vex 4 icon" },
+      { title: "Vex 5", url: "edu/vex5/index.html", icon: "edu/vex5/assets/images/brand-logo.png", iconAlt: "Vex 5 icon" },
+      { title: "Vex 6", url: "edu/vex6/index.html", icon: "edu/vex6/assets/icon.png", iconAlt: "Vex 6 icon" }
+    ];
+<!-- Thatoneidlecat was here youtube.com/@thatoneidlecat -->
+    const gameSelect = document.querySelector("#game-select");
+    const gamesContainer = document.querySelector("#games");
+    const openPageBlankButton = document.querySelector("#open-page-blank");
+    const playSelectedButton = document.querySelector("#play-selected");
+    const pressedKeys = new Set();
+
+    function openPageInAboutBlank() {
+      const pageUrl = window.location.href;
+      const tab = window.open("about:blank", "_blank");
+
+      if (!tab) {
+        alert("Please allow popups for this site to open about:blank.");
+        return;
+      }
+
+      tab.document.open();
+      tab.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>          <title>Kirby V1</title>          <style>            html,            body {              width: 100%;              height: 100%;/.................................................................
+          
+              overflow: hidden;
+              background: #000;
+            }
+
+            iframe {
+              width: 100%;
+              height: 100%;
+              border: 0;
+              display: block;
+            }
+          </style>
+        </head>
+        <body>
+          <iframe src="${pageUrl}" allowfullscreen></iframe>
+        </body>
+        </html>
+      `);
+      tab.document.close();
+    }
+
+    function playSelectedGame() {
+      window.location.href = gameSelect.value;
+    }
+
+    function openPasswordPage() {
+      window.location.href = "secret/password.html";
+    }
+
+    gameSelect.innerHTML = games.map((game) => `
+      <option value="${game.url}">${game.title}</option>
+    `).join("");
+
+    gamesContainer.innerHTML = games.map((game) => `
+      <a class="game-link" href="${game.url}" aria-label="Play ${game.title}">
+        <img src="${game.icon}" alt="${game.iconAlt}" loading="lazy">
+        <span>${game.title}</span>
+      </a>
+    `).join("");
+
+    openPageBlankButton.addEventListener("click", openPageInAboutBlank);
+    playSelectedButton.addEventListener("click", playSelectedGame);
+
+    window.addEventListener("keydown", (event) => {
+      pressedKeys.add(event.key);
+
+      if (pressedKeys.has("9") && pressedKeys.has("0")) {
+        openPasswordPage();
+      }
+    });
+
+    window.addEventListener("keyup", (event) => {
+      pressedKeys.delete(event.key);
+    });
+  </script>
+</body>
+</html>

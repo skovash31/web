@@ -1,0 +1,46 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="CSS/style.css">
+    <link rel="stylesheet" href="CSS/Size.css">
+</head>
+<body>
+
+<h1> </h1>
+<audio id="main-music" src="BQX assets/music/Pixel Feathers.mp3" loop></audio>
+
+<a href="Extra/about.html">
+    <img class="title-image" src="BQX assets/Main Page/BirdQuestX Title.png" alt="BirdQuestX Title">
+</a>
+
+<a href="Extra/deivcetypeprediction.html">
+    <img class="start-button" src="BQX assets/Main Page/Start.png" alt="Start Game">
+</a>
+<a href="Game/shop.html">
+    <img class="shop-button" src="BQX assets/Main Page/Shop.png" alt="shop">
+</a>
+
+
+
+</body>
+ <script>
+        const mainMusic = document.getElementById("main-music");
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key.toLowerCase() === "l") {
+                if (mainMusic.paused) {
+                    mainMusic.play();
+                } else {
+                    mainMusic.pause();
+                }
+            }
+
+            if (event.key.toLowerCase() === "p") {
+                window.location.href = "Game/Beta/Beta Testing Pick.html";
+            }
+        });
+    </script>
+    
+</html>

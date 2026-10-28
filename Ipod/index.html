@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yapper Bot Panel</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #1e1f22; color: #dbdee1; }
+  #login { max-width: 420px; margin: 15vh auto; padding: 24px; background: #2b2d31; border-radius: 8px; }
+  #login h2 { margin-top: 0; }
+  input[type=password], input[type=text], textarea { width: 100%; padding: 10px; border: 0; border-radius: 6px; background: #1e1f22; color: #dbdee1; font-size: 15px; }
+  button { padding: 10px 16px; border: 0; border-radius: 6px; background: #5865f2; color: #fff; font-size: 15px; cursor: pointer; }
+  button:hover { background: #4752c4; }
+  #err { color: #f23f42; margin-top: 10px; min-height: 18px; font-size: 14px; }
+  #app { display: none; height: 100%; }
+  #servers { width: 72px; background: #1e1f22; overflow-y: auto; padding: 8px 0; text-align: center; float: left; height: 100%; }
+  #channels { width: 220px; background: #2b2d31; overflow-y: auto; float: left; height: 100%; padding: 8px; }
+  #main { margin-left: 292px; margin-left: 292px; height: 100%; display: none; }
+  #main.on { display: block; }
+  #chatwrap { margin-left: 292px; height: 100%; }
+  .srv { width: 48px; height: 48px; margin: 6px auto; border-radius: 50%; background: #35373c; overflow: hidden; cursor: pointer; line-height: 48px; font-weight: bold; color: #fff; }
+  .srv img { width: 48px; height: 48px; display: block; }
+  .srv.sel { border-radius: 16px; background: #5865f2; }
+  .cat { font-size: 12px; text-transform: uppercase; color: #949ba4; margin: 14px 4px 4px; }
+  .ch { padding: 6px 8px; border-radius: 4px; cursor: pointer; color: #949ba4; }
+  .ch:hover { background: #35373c; color: #dbdee1; }
+  .ch.sel { background: #404249; color: #fff; }
+  #head { height: 48px; padding: 14px 16px; border-bottom: 1px solid #1e1f22; font-weight: bold; }
+  #msgs { height: calc(100% - 48px - 92px); overflow-y: auto; padding: 12px 16px; }
+  .m { overflow: hidden; margin-bottom: 14px; }
+  .av { float: left; width: 40px; height: 40px; border-radius: 50%; background: #5865f2; color: #fff; text-align: center; line-height: 40px; font-weight: bold; overflow: hidden; }
+  .av img { width: 40px; height: 40px; display: block; }
+  .body { margin-left: 52px; }
+  .nm { font-weight: bold; color: #fff; }
+  .bot { background: #5865f2; color: #fff; font-size: 10px; padding: 1px 4px; border-radius: 3px; margin-left: 4px; }
+  .ts { font-size: 11px; color: #949ba4; margin-left: 6px; }
+  .tx { white-space: pre-wrap; word-wrap: break-word; }
+  .emb { border-left: 4px solid #5865f2; background: #2b2d31; padding: 6px 10px; margin-top: 4px; border-radius: 4px; }
+  #composer { position: absolute; left: 292px; right: 0; bottom: 0; height: 92px; padding: 12px 16px; background: #1e1f22; }
+  #composer textarea { height: 40px; resize: none; float: left; width: calc(100% - 90px); }
+  #composer button { float: right; height: 40px; }
+  #status { clear: both; font-size: 12px; color: #949ba4; padding-top: 6px; }
+  #me { position: absolute; left: 0; bottom: 0; width: 292px; background: #232428; padding: 8px; font-size: 13px; }
+  #channels { height: calc(100% - 50px); }
+  #servers { height: calc(100% - 50px); }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>Yapper Bot Panel</h2>
+  <p>Paste your bot key (starts with <b>yb_</b>).</p>
+  <input type="password" id="token" placeholder="yb_...">
+  <p><button id="go">Connect</button></p>
+  <div id="err"></div>
+</div>
+
+<div id="app">
+  <div id="servers"></div>
+  <div id="channels"></div>
+  <div id="me"></div>
+  <div id="chatwrap">
+    <div id="head">Pick a server and a channel</div>
+    <div id="msgs"></div>
+    <div id="composer">
+      <textarea id="input" placeholder="Message as your bot..."></textarea>
+      <button id="send">Send</button>
+      <div id="status"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var BASE = 'https://www.yapper.website/api/bot/v1';
+  var SITE = 'https://www.yapper.website';
+  var token = '';
+  var curServer = null;
+  var curChannel = null;
+  var lastSig = '';
+  var timer = null;
+  var authorsById = {};
+
+  function $(id) { return document.getElementById(id); }
+
+  function api(method, path, body, cb) {
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, BASE + path, true);
+    xhr.setRequestHeader('Authorization', 'Bot ' + token);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) { return; }
+      var data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (e) { data = {}; }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        cb(null, data);
+      } else {
+        var msg = data.error || (xhr.status === 0 ? 'Network/CORS error' : 'Error ' + xhr.status);
+        cb(new Error(msg), null);
+      }
+    };
+    xhr.send(body === undefined || body === null ? null : JSON.stringify(body));
+  }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) { e.className = cls; }
+    if (text !== undefined && text !== null) { e.appendChild(document.createTextNode(text)); }
+    return e;
+  }
+
+  function avatarUrl(u) {
+    if (!u) { return null; }
+    var url = u.avatar_url || u.avatar || u.avatar_image || u.icon_url || u.icon || null;
+    if (!url || typeof url !== 'string') { return null; }
+    if (url.charAt(0) === '/') { url = SITE + url; }
+    return url;
+  }
+
+  function nameOf(u, fallbackId) {
+    if (!u) { return 'Unknown (' + fallbackId + ')'; }
+    return u.display_name || u.username || ('User ' + u.id);
+  }
+
+  function makeAvatar(u, cls, size) {
+    var d = el('div', cls);
+    var url = avatarUrl(u);
+    var initial = nameOf(u, '?').charAt(0).toUpperCase();
+    if (url) {
+      var img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      img.onerror = function () {
+        if (img.parentNode) { img.parentNode.removeChild(img); }
+        d.appendChild(document.createTextNode(initial));
+      };
+      d.appendChild(img);
+    } else {
+      d.appendChild(document.createTextNode(initial));
+    }
+    return d;
+  }
+
+  function setStatus(t) { $('status').textContent = t || ''; }
+
+  // ---------- login ----------
+  function connect() {
+    token = $('token').value.replace(/^\s+|\s+$/g, '');
+    if (token.indexOf('yb_') !== 0) {
+      $('err').textContent = 'Bot key must start with yb_';
+      return;
+    }
+    $('err').textContent = 'Connecting...';
+    api('GET', '/me', null, function (err, me) {
+      if (err) { $('err').textContent = 'Could not connect: ' + err.message; return; }
+      $('login').style.display = 'none';
+      $('app').style.display = 'block';
+      var meBox = $('me');
+      meBox.innerHTML = '';
+      var av = makeAvatar(me, 'av');
+      av.style.width = '32px'; av.style.height = '32px'; av.style.lineHeight = '32px';
+      meBox.appendChild(av);
+      var t = el('div', null, nameOf(me) + ' (bot)');
+      t.style.marginLeft = '44px'; t.style.paddingTop = '8px';
+      meBox.appendChild(t);
+      loadServers();
+    });
+  }
+
+  // ---------- servers ----------
+  function loadServers() {
+    api('GET', '/servers', null, function (err, out) {
+      if (err) { setStatus('Servers: ' + err.message); return; }
+      var box = $('servers');
+      box.innerHTML = '';
+      var list = out.servers || [];
+      if (!list.length) { box.appendChild(el('div', 'cat', 'No servers')); }
+      for (var i = 0; i < list.length; i++) {
+        (function (s) {
+          var d = el('div', 'srv');
+          d.title = s.name || s.id;
+          var url = avatarUrl(s) || (s.icon_url ? s.icon_url : null);
+          if (url) {
+            var img = document.createElement('img');
+            img.src = url;
+            img.alt = '';
+            img.onerror = function () { d.removeChild(img); d.appendChild(document.createTextNode((s.name || '?').charAt(0).toUpperCase())); };
+            d.appendChild(img);
+          } else {
+            d.appendChild(document.createTextNode((s.name || '?').charAt(0).toUpperCase()));
+          }
+          d.onclick = function () { selectServer(s, d); };
+          box.appendChild(d);
+        })(list[i]);
+      }
+    });
+  }
+
+  function selectServer(s, node) {
+    var all = $('servers').children;
+    for (var i = 0; i < all.length; i++) { all[i].className = all[i].className.replace(' sel', ''); }
+    node.className += ' sel';
+    curServer = s;
+    curChannel = null;
+    stopPolling();
+    $('msgs').innerHTML = '';
+    $('head').textContent = s.name || 'Server';
+    api('GET', '/servers/' + s.id + '/channels', null, function (err, out) {
+      if (err) { setStatus('Channels: ' + err.message); return; }
+      renderChannels(out.channels || [], out.categories || []);
+    });
+  }
+
+  function renderChannels(channels, categories) {
+    var box = $('channels');
+    box.innerHTML = '';
+    var groups = {};
+    var order = [];
+    var i;
+    for (i = 0; i < categories.length; i++) {
+      groups[categories[i].id] = { name: categories[i].name, items: [] };
+      order.push(categories[i].id);
+    }
+    groups['none'] = { name: '', items: [] };
+    order.unshift('none');
+    for (i = 0; i < channels.length; i++) {
+      var c = channels[i];
+      var key = c.category && groups[c.category.id] ? c.category.id : 'none';
+      groups[key].items.push(c);
+    }
+    for (i = 0; i < order.length; i++) {
+      var g = groups[order[i]];
+      if (!g.items.length) { continue; }
+      if (g.name) { box.appendChild(el('div', 'cat', g.name)); }
+      for (var j = 0; j < g.items.length; j++) {
+        (function (ch) {
+          var prefix = ch.type === 'voice' ? '\uD83D\uDD0A ' : '# ';
+          var d = el('div', 'ch', prefix + ch.name);
+          d.onclick = function () {
+            if (ch.type === 'voice') { setStatus('Voice channels have no text.'); return; }
+            selectChannel(ch, d);
+          };
+          box.appendChild(d);
+        })(g.items[j]);
+      }
+    }
+  }
+
+  function selectChannel(ch, node) {
+    var all = $('channels').children;
+    for (var i = 0; i < all.length; i++) { all[i].className = all[i].className.replace(' sel', ''); }
+    node.className += ' sel';
+    curChannel = ch;
+    lastSig = '';
+    $('head').textContent = '# ' + ch.name + (curServer ? '  -  ' + curServer.name : '');
+    $('msgs').innerHTML = '';
+    loadMessages(true);
+    startPolling();
+  }
+
+  // ---------- messages ----------
+  function startPolling() {
+    stopPolling();
+    timer = setInterval(function () { loadMessages(false); }, 3000);
+  }
+  function stopPolling() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  function loadMessages(forceScroll) {
+    if (!curChannel) { return; }
+    var chId = curChannel.id;
+    api('GET', '/channels/' + chId + '/messages?limit=50', null, function (err, out) {
+      if (err) { setStatus('Messages: ' + err.message); return; }
+      if (!curChannel || curChannel.id !== chId) { return; }
+      var authors = out.authors || [];
+      var i;
+      for (i = 0; i < authors.length; i++) { authorsById[authors[i].id] = authors[i]; }
+      var msgs = out.messages || [];
+      var sig = '';
+      for (i = 0; i < msgs.length; i++) { sig += msgs[i].id + ':' + (msgs[i].content || '').length + ';'; }
+      if (sig === lastSig) { return; }
+      lastSig = sig;
+      renderMessages(msgs, forceScroll);
+    });
+  }
+
+  function fmtTime(m) {
+    var t = m.created_at || m.timestamp || m.created;
+    if (!t) { return ''; }
+    var d = new Date(t);
+    if (isNaN(d.getTime())) { return ''; }
+    return d.toLocaleString();
+  }
+
+  function replaceMentions(text) {
+    return String(text || '').replace(/<@!?(\w+)>/g, function (all, id) {
+      var u = authorsById[id];
+      return '@' + (u ? nameOf(u, id) : id);
+    });
+  }
+
+  function renderMessages(msgs, forceScroll) {
+    var box = $('msgs');
+    var nearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 80;
+    box.innerHTML = '';
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
+      var u = m.author || authorsById[m.author_id] || null;
+      var row = el('div', 'm');
+      row.appendChild(makeAvatar(u, 'av'));
+      var body = el('div', 'body');
+      var top = el('div');
+      top.appendChild(el('span', 'nm', nameOf(u, m.author_id)));
+      if (m.author_bot || (u && u.bot)) { top.appendChild(el('span', 'bot', 'BOT')); }
+      top.appendChild(el('span', 'ts', fmtTime(m)));
+      body.appendChild(top);
+      if (m.content) { body.appendChild(el('div', 'tx', replaceMentions(m.content))); }
+      if (m.embeds && m.embeds.length) {
+        for (var e = 0; e < m.embeds.length; e++) {
+          var em = m.embeds[e];
+          var eb = el('div', 'emb');
+          if (em.title) { var tt = el('div', 'nm', em.title); eb.appendChild(tt); }
+          if (em.description) { eb.appendChild(el('div', 'tx', em.description)); }
+          body.appendChild(eb);
+        }
+      }
+      row.appendChild(body);
+      box.appendChild(row);
+    }
+    if (forceScroll || nearBottom) { box.scrollTop = box.scrollHeight; }
+  }
+
+  function sendMessage() {
+    if (!curChannel) { setStatus('Pick a channel first.'); return; }
+    var input = $('input');
+    var text = input.value.replace(/^\s+|\s+$/g, '');
+    if (!text) { return; }
+    setStatus('Sending...');
+    api('POST', '/channels/' + curChannel.id + '/messages', { content: text }, function (err) {
+      if (err) { setStatus('Send failed: ' + err.message); return; }
+      input.value = '';
+      setStatus('Sent.');
+      loadMessages(true);
+    });
+  }
+
+  $('go').onclick = connect;
+  $('token').onkeydown = function (ev) { if ((ev.keyCode || ev.which) === 13) { connect(); } };
+  $('send').onclick = sendMessage;
+  $('input').onkeydown = function (ev) {
+    var k = ev.keyCode || ev.which;
+    if (k === 13 && !ev.shiftKey) {
+      if (ev.preventDefault) { ev.preventDefault(); }
+      sendMessage();
+      return false;
+    }
+  };
+})();
+</script>
+</body>
+</html>

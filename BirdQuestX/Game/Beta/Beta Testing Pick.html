@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beta Testing Pick</title>
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: magenta;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        .picker-text {
+            font-size: 3rem;
+            line-height: 1.4;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.45);
+        }
+    </style>
+</head>
+<body>
+    <div class="picker-text">
+        Press 1 to go to BetaTest(Mobile).html<br>
+        Press 2 to go to BetaTest(PC).html
+    </div>
+
+    <script>
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "1") {
+                window.location.href = "BetaTest(Mobile).html";
+            }
+
+            if (event.key === "2") {
+                window.location.href = "BetaTest(PC).html";
+            }
+        });
+    </script>
+</body>
+</html>
