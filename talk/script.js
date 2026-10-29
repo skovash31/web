@@ -1,73 +1,68 @@
-// SETUP (free): console.firebase.google.com -> create project -> add Web app -> paste config below.
-// Then: Authentication -> Sign-in method -> enable Google, and add your GitHub Pages domain under Authorized domains.
-// Also enable Anonymous under Sign-in method (for the no-account option).
-// Then: Firestore Database -> create -> Rules -> paste:
-//   rules_version = '2';
-//   service cloud.firestore { match /databases/{d}/documents {
-//     match /messages/{id} { allow read: if request.auth != null;
-//       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid; } } }
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "PASTE_HERE",
-  authDomain: "PASTE_HERE",
-  projectId: "PASTE_HERE",
-  appId: "PASTE_HERE"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+// No accounts, no Firebase. Messages go through the free public relay ntfy.sh.
+// Change TOPIC to any long random string so only your people share the room.
+const TOPIC = "thatoneidlecat-chat-8f3k2q9x";
+const BASE = "https://ntfy.sh/";
 
 const $ = id => document.getElementById(id);
-let user = null, unsub = null;
+let myName = "", myId = "", seen = new Set(), es = null;
 
-$("signin").onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => alert(e.message));
-$("guest").onclick = () => {
-  const n = $("guestname").value.trim();
-  if (!n) { alert("Pick a name first."); return; }
-  try { localStorage.setItem("guest-name", n); } catch (e) {}
-  signInAnonymously(auth).catch(e => alert(e.message));
-};
-function myName() {
-  if (user && user.displayName) return user.displayName;
-  try { return localStorage.getItem("guest-name") || "Guest"; } catch (e) { return "Guest"; }
+function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+myName = lsGet("chat-name");
+myId = lsGet("chat-id");
+if (!myId) { myId = "u" + Math.random().toString(36).slice(2, 10); lsSet("chat-id", myId); }
+
+function addMsg(m) {
+  if (m.event !== "message" || seen.has(m.id)) return;
+  seen.add(m.id);
+  const box = $("msgs");
+  const el = document.createElement("div");
+  const uid = (m.tags && m.tags[0]) || "";
+  el.className = "m" + (uid === myId ? " me" : "");
+  const n = document.createElement("div"); n.className = "n"; n.textContent = m.title || "Anon";
+  const t = document.createElement("div"); t.textContent = m.message || "";
+  el.append(n, t); box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
 }
-$("signout").onclick = () => signOut(auth);
 
-onAuthStateChanged(auth, u => {
-  user = u;
-  $("login").hidden = !!u;
-  $("msgs").hidden = !u;
-  $("sendrow").hidden = !u;
-  $("signout").hidden = !u;
-  if (unsub) { unsub(); unsub = null; }
-  if (!u) return;
-  const q = query(collection(db, "messages"), orderBy("ts", "desc"), limit(100));
-  unsub = onSnapshot(q, snap => {
-    const box = $("msgs");
-    box.textContent = "";
-    snap.docs.slice().reverse().forEach(d => {
-      const x = d.data();
-      const el = document.createElement("div");
-      el.className = "m" + (x.uid === user.uid ? " me" : "");
-      const n = document.createElement("div"); n.className = "n"; n.textContent = x.name || "Anon";
-      const t = document.createElement("div"); t.textContent = x.text || "";
-      el.append(n, t); box.appendChild(el);
-    });
-    box.scrollTop = box.scrollHeight;
-  });
-});
+function connect() {
+  if (es) es.close();
+  es = new EventSource(BASE + TOPIC + "/sse?since=12h");
+  es.onmessage = e => { try { addMsg(JSON.parse(e.data)); } catch (x) {} };
+}
+
+function enter() {
+  $("login").hidden = true;
+  $("msgs").hidden = false;
+  $("sendrow").hidden = false;
+  $("rename").hidden = false;
+  connect();
+  $("text").focus();
+}
+
+function join() {
+  const v = $("guestname").value.trim();
+  if (!v) return;
+  myName = v; lsSet("chat-name", v); enter();
+}
+$("guest").onclick = join;
+$("guestname").onkeydown = e => { if (e.key === "Enter") join(); };
+$("rename").onclick = () => {
+  const v = prompt("New name:", myName);
+  if (v && v.trim()) { myName = v.trim().slice(0, 24); lsSet("chat-name", myName); }
+};
 
 function send() {
   const v = $("text").value.trim();
-  if (!v || !user) return;
+  if (!v) return;
   $("text").value = "";
-  addDoc(collection(db, "messages"), {
-    text: v, uid: user.uid, name: myName(), ts: serverTimestamp()
-  }).catch(e => alert(e.message));
+  fetch(BASE, {
+    method: "POST",
+    body: JSON.stringify({ topic: TOPIC, message: v, title: myName, tags: [myId] })
+  }).catch(() => alert("Could not send."));
 }
 $("sendbtn").onclick = send;
 $("text").onkeydown = e => { if (e.key === "Enter") send(); };
+
+if (myName) enter();
