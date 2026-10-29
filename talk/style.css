@@ -16,4 +16,4 @@ header button{background:none;border:0;color:var(--accent);font:inherit;cursor:p
 input{flex:1;padding:10px 12px;border-radius:20px;border:1px solid var(--other);background:var(--bg);color:var(--text);font:inherit}
 .send{padding:10px 18px;border:0;border-radius:20px;background:var(--accent);color:#fff;font:inherit;cursor:pointer}
 [hidden]{display:none!important}
-.stack{display:flex;flex-direction:column;gap:10px;width:min(320px,90%)}.stack input{flex:none}.alt{background:var(--other);color:var(--text)}
+.stack{display:flex;flex-direction:column;gap:10px;width:min(320px,90%)}.stack input{flex:none}

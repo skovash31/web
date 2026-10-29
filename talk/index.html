@@ -9,16 +9,19 @@
 <body>
 <header>
   <h1>💬 Chat Room</h1>
-  <button id="signout" hidden>Sign out</button>
+  <button id="rename" hidden>Change name</button>
 </header>
 <div id="login" class="center">
-  <div class="stack"><button id="signin" class="send">Sign in with Google</button><input id="guestname" placeholder="Or pick a name to join as guest" maxlength="24"><button id="guest" class="send alt">Continue without account</button></div>
+  <div class="stack">
+    <input id="guestname" placeholder="Pick a name" maxlength="24">
+    <button id="guest" class="send">Join</button>
+  </div>
 </div>
 <div id="msgs" hidden></div>
 <div class="row" id="sendrow" hidden>
   <input id="text" placeholder="Type a message…" maxlength="500" autocomplete="off">
   <button class="send" id="sendbtn" type="button">Send</button>
 </div>
-<script type="module" src="script.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
