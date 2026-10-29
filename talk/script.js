@@ -57,10 +57,10 @@ function send() {
   const v = $("text").value.trim();
   if (!v) return;
   $("text").value = "";
-  fetch(BASE, {
-    method: "POST",
-    body: JSON.stringify({ topic: TOPIC, message: v, title: myName, tags: [myId] })
-  }).catch(() => alert("Could not send."));
+  const url = BASE + TOPIC + "/publish?message=" + encodeURIComponent(v) +
+    "&title=" + encodeURIComponent(myName) + "&tags=" + encodeURIComponent(myId);
+  fetch(url).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); })
+    .catch(e => alert("Could not send: " + e.message + " (your network may be blocking ntfy.sh)"));
 }
 $("sendbtn").onclick = send;
 $("text").onkeydown = e => { if (e.key === "Enter") send(); };
