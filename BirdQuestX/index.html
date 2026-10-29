@@ -1,46 +1,16 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <link rel="stylesheet" href="CSS/style.css">
-    <link rel="stylesheet" href="CSS/Size.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Page under rework!</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #000; color: #fff; }
+  body { display: flex; align-items: center; justify-content: center; text-align: center; font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  h1 { font-size: clamp(3rem, 15vw, 12rem); margin: 0; font-weight: 800; }
+</style>
 </head>
 <body>
-
-<h1> </h1>
-<audio id="main-music" src="BQX assets/music/Pixel Feathers.mp3" loop></audio>
-
-<a href="Extra/about.html">
-    <img class="title-image" src="BQX assets/Main Page/BirdQuestX Title.png" alt="BirdQuestX Title">
-</a>
-
-<a href="Extra/deivcetypeprediction.html">
-    <img class="start-button" src="BQX assets/Main Page/Start.png" alt="Start Game">
-</a>
-<a href="Game/shop.html">
-    <img class="shop-button" src="BQX assets/Main Page/Shop.png" alt="shop">
-</a>
-
-
-
+<h1>Remaking this page rn /:</h1>
 </body>
- <script>
-        const mainMusic = document.getElementById("main-music");
-
-        document.addEventListener("keydown", function (event) {
-            if (event.key.toLowerCase() === "l") {
-                if (mainMusic.paused) {
-                    mainMusic.play();
-                } else {
-                    mainMusic.pause();
-                }
-            }
-
-            if (event.key.toLowerCase() === "p") {
-                window.location.href = "Game/Beta/Beta Testing Pick.html";
-            }
-        });
-    </script>
-    
 </html>
