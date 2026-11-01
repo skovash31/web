@@ -68,35 +68,14 @@ function stop(){unsubs.forEach(f=>f());unsubs=[];if(unsubM)unsubM();unsubM=null;
 
 const nameOf=u=>(u.displayName||u.email.split('@')[0]).slice(0,20);
 const err=e=>$('aerr').textContent=e.message.replace('Firebase: ','');
-const getYT=u=>{try{return JSON.parse(localStorage.getItem('yt_'+u.uid))}catch(e){return null}};
 const saveUser=u=>fs.collection('users').doc(u.uid).set({name:user},{merge:true}).catch(()=>{});
 $('up').onclick=()=>{const n=$('aname').value.trim();if(!n){$('aerr').textContent='Enter a username';return}
  auth.createUserWithEmailAndPassword($('aemail').value,$('apass').value)
- .then(c=>c.user.updateProfile({displayName:n}).then(()=>{user=n;drawList()})).catch(err)};
+ .then(c=>c.user.updateProfile({displayName:n}).then(()=>{user=n.slice(0,20);saveUser(c.user);drawList()})).catch(err)};
 $('inb').onclick=()=>auth.signInWithEmailAndPassword($('aemail').value,$('apass').value).catch(err);
+$('gb').onclick=()=>auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(err);
 auth.onAuthStateChanged(u=>{
- if(!u){stop();user='';$('auth').style.display='grid';$('yt').style.display='none';return}
+ if(!u){stop();user='';$('auth').style.display='grid';return}
  $('auth').style.display='none';$('aerr').textContent='';
- const y=getYT(u);
- if(y){user=y.title.slice(0,20);$('yt').style.display='none';saveUser(u);start()}
- else{user=nameOf(u);$('yt').style.display='grid'}});
-$('ytout').onclick=()=>auth.signOut();
-const ytProvider=()=>{const p=new firebase.auth.GoogleAuthProvider();p.addScope('https://www.googleapis.com/auth/youtube.readonly');return p};
-async function linkYT(u,token){
- const res=await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',{headers:{Authorization:'Bearer '+token}});
- const d=await res.json();
- if(!d.items||!d.items.length)throw new Error('No YouTube channel found on that Google account');
- const ch=d.items[0];
- try{localStorage.setItem('yt_'+u.uid,JSON.stringify({id:ch.id,title:ch.snippet.title}))}catch(e){}
- user=ch.snippet.title.slice(0,20);$('yt').style.display='none';$('yterr').textContent='';saveUser(u);start()}
-$('gb').onclick=async()=>{
- try{const r=await auth.signInWithPopup(ytProvider());await linkYT(r.user,r.credential.accessToken)}
- catch(e){const m=e.message.replace('Firebase: ','');$('aerr').textContent=m;$('yterr').textContent=m}};
-$('ytb').onclick=async()=>{
- const u=auth.currentUser,p=ytProvider();
- try{const has=u.providerData.some(d=>d.providerId==='google.com');
-  const r=has?await u.reauthenticateWithPopup(p):await u.linkWithPopup(p);
-  await linkYT(u,r.credential.accessToken)}
- catch(e){$('yterr').textContent=e.message.replace('Firebase: ','')}};
-
+ user=nameOf(u);saveUser(u);start()});
 })().catch(e=>alert('Could not load firebase.txt (run via localhost or hosting): '+e.message));
