@@ -2,9 +2,52 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BirdQuestX - Multiplayer Battle</title>
-    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../BirdQuestX/css/style.css">
+    <style>
+        /* Mobile controls */
+        #mobile-controls {
+            position: fixed;
+            left: 20px;
+            bottom: 20px;
+            z-index: 10;
+        }
+        #action-controls {
+            position: fixed;
+            right: 20px;
+            bottom: 30px;
+            display: flex;
+            gap: 15px;
+            z-index: 10;
+        }
+        .dpad { display: flex; flex-direction: column; align-items: center; }
+        .middle-row { display: flex; }
+        .center { width: 60px; height: 60px; }
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            font-size: 24px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        .control-btn.pressed { background: rgba(255, 255, 255, 0.5); }
+        .attack-btn { background: rgba(244, 67, 54, 0.6); }
+        .block-btn { background: rgba(33, 150, 243, 0.6); }
+        #gameCanvas { max-width: 100%; height: auto; touch-action: none; }
+        .character-card.selected { outline: 3px solid #ffeb3b; }
+
+        /* Hide touch controls on desktop with a mouse */
+        @media (hover: hover) and (pointer: fine) {
+            #mobile-controls, #action-controls { display: none; }
+        }
+    </style>
 </head>
 <body>
     <!-- Character Selection Screen -->
@@ -54,7 +97,7 @@
             <button id="leave-btn" class="game-btn">Leave Game</button>
         </div>
         <canvas id="gameCanvas"></canvas>
-        
+
         <!-- Mobile Controls -->
         <div id="mobile-controls">
             <div class="dpad">
