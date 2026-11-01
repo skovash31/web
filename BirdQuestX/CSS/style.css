@@ -4,16 +4,16 @@ html, body {
 }
 
 body {
-    background: url("../BQX assets/Menus/background.jpg") no-repeat center center fixed;
+    background: #0d1030 url("../BQX assets/Menus/background.jpg") no-repeat center center fixed;
     background-size: cover;
 }
 
 h1 {
     text-align: center;
-    color: white;
+    color: #000000
     font-size: 3em;
-    margin-top: 20%;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    margin-top: 5%;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5), 0 0 24px rgba(0, 0, 0, 0);
 }
 
 .start-button {
@@ -33,3 +33,27 @@ h1 {
     margin: 1.5rem auto 0;
     cursor: pointer;
 }
+
+.credits {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+}
+
+.credits img {
+    display: block;
+    width: 80px;
+    height: auto;
+}
+
+a img {
+    transition: transform 0.15s, filter 0.15s;
+    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+}
+
+a:hover img {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 16px rgba(0, 0, 0, 0));
+}
+
+a:active img { transform: scale(0.96); }

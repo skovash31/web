@@ -1,25 +1,95 @@
-const chans=['general','random','coding'];
-let cur='general',db={general:[],random:[],coding:[]},user='';
-try{db=JSON.parse(localStorage.getItem('db'))||db;user=localStorage.getItem('user')||''}catch(e){}
-if(!user){user=(prompt('Pick a username')||'You').slice(0,20);try{localStorage.setItem('user',user)}catch(e){}}
-const bc=window.BroadcastChannel?new BroadcastChannel('chatroom'):null;
+// 1) Paste your Firebase web app config here (Firebase console > Project settings > Your apps)
+const firebaseConfig={apiKey:'YOUR_API_KEY',authDomain:'YOUR_PROJECT.firebaseapp.com',projectId:'YOUR_PROJECT',appId:'YOUR_APP_ID'};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth(),fs=firebase.firestore(),FV=firebase.firestore.FieldValue;
 const $=id=>document.getElementById(id);
+let user='',cur=null,unsubs=[],unsubM=null,groups=[],fr=[];
+const uid=()=>auth.currentUser&&auth.currentUser.uid;
 const col=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return`hsl(${h},55%,50%)`};
-function save(){try{localStorage.setItem('db',JSON.stringify(db))}catch(e){}}
-function drawList(){$('list').innerHTML='';chans.forEach(c=>{const d=document.createElement('div');d.className='ch'+(c===cur?' on':'');d.textContent='# '+c;d.onclick=()=>{cur=c;drawList();draw()};$('list').appendChild(d)});
- $('top').textContent='# '+cur;$('in').placeholder='Message #'+cur;
- $('me').innerHTML='';const a=document.createElement('div');a.className='av';a.style.background=col(user);a.textContent=user[0].toUpperCase();$('me').append(a,user)}
-function draw(){const box=$('msgs');box.innerHTML='';db[cur].forEach(m=>{
- const r=document.createElement('div');r.className='m';
- const a=document.createElement('div');a.className='av';a.style.background=col(m.u);a.textContent=m.u[0].toUpperCase();
- const b=document.createElement('div');const n=document.createElement('span');n.className='n';n.textContent=m.u;
- const t=document.createElement('span');t.className='t';t.textContent=new Date(m.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
- const x=document.createElement('div');x.className='x';x.textContent=m.x;
- const h=document.createElement('div');h.append(n,t);b.append(h,x);r.append(a,b);box.appendChild(r)});
- box.scrollTop=box.scrollHeight}
-function add(c,u,x,fromOther){db[c].push({u,x,t:Date.now()});save();if(!fromOther&&bc)bc.postMessage({c,u,x});if(c===cur)draw()}
-if(bc)bc.onmessage=e=>add(e.data.c,e.data.u,e.data.x,true);
-const replies=['Nice!','Haha true','Tell me more','Agreed 👍','Wait, really?','That’s cool'];
-$('in').addEventListener('keydown',e=>{if(e.key!=='Enter')return;const v=e.target.value.trim();if(!v)return;e.target.value='';
- add(cur,user,v);const c=cur;setTimeout(()=>add(c,'Bot',replies[Math.floor(Math.random()*replies.length)],true),900)});
-drawList();draw();
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const other=f=>{const o=f.members.find(m=>m!==uid());return{id:o,name:(f.names||{})[o]||'?'}};
+const fail=e=>alert(e.message);
+
+function drawList(){
+ const L=$('list');L.innerHTML='';
+ const head=(t,fn)=>{const d=el('div','hd',t);const b=el('button',null,'+');b.onclick=fn;d.appendChild(b);L.appendChild(d)};
+ const item=(t,c,fn)=>{const d=el('div','ch'+(cur&&cur.id===c.id?' on':''),t);d.onclick=fn;L.appendChild(d);return d};
+ head('Friends',addFriend);
+ fr.forEach(f=>{const o=other(f);
+  if(f.status==='accepted')item('@ '+o.name,f,()=>openChat({col:'friendships',id:f.id,name:o.name}));
+  else if(f.from===uid())item(o.name+' (pending)',f,()=>{});
+  else{const d=item(o.name,f,()=>{});const b=el('button',null,'Accept');b.onclick=()=>fs.collection('friendships').doc(f.id).update({status:'accepted'}).catch(fail);d.appendChild(b)}});
+ head('Groups',newGroup);
+ groups.forEach(g=>item('# '+g.name,g,()=>openChat({col:'groups',id:g.id,name:g.name})));
+ const m=$('me');m.innerHTML='';const a=el('div','av',(user||'?')[0].toUpperCase());a.style.background=col(user||'?');
+ const lo=el('button',null,'Log out');lo.onclick=()=>auth.signOut();m.append(a,user,lo)}
+
+function draw(list){const box=$('msgs');box.innerHTML='';list.forEach(m=>{
+ const r=el('div','m'),a=el('div','av',m.u[0].toUpperCase());a.style.background=col(m.u);
+ const b=el('div'),h=el('div'),x=el('div','x',m.x);
+ h.append(el('span','n',m.u),el('span','t',(m.t&&m.t.toDate?m.t.toDate():new Date()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})));
+ if(m.f){if(m.f.type.startsWith('image/')){const i=el('img');i.src=m.f.url;x.appendChild(i)}else{const l=el('a',null,'📄 '+m.f.name);l.href=m.f.url;l.download=m.f.name;x.appendChild(l)}}
+ b.append(h,x);r.append(a,b);box.appendChild(r)});box.scrollTop=box.scrollHeight}
+
+function openChat(c){cur=c;if(unsubM)unsubM();
+ $('title').textContent=(c.col==='groups'?'# ':'@ ')+c.name;$('addm').hidden=c.col!=='groups';$('in').placeholder='Message '+c.name;drawList();
+ unsubM=fs.collection(c.col).doc(c.id).collection('messages').orderBy('t').limitToLast(200)
+ .onSnapshot(s=>draw(s.docs.map(d=>d.data({serverTimestamps:'estimate'}))),fail)}
+
+function send(x,f){if(!cur)return alert('Pick a friend or group first');
+ const d={u:user,uid:uid(),x,t:FV.serverTimestamp()};if(f)d.f=f;
+ fs.collection(cur.col).doc(cur.id).collection('messages').add(d).catch(fail)}
+
+async function addFriend(){const n=(prompt('Friend username')||'').trim();if(!n)return;
+ try{const s=await fs.collection('users').where('name','==',n).limit(1).get();
+ if(s.empty)return alert('No user with that name');
+ const o=s.docs[0];if(o.id===uid())return alert('That is you');
+ if(fr.some(f=>f.members.includes(o.id)))return alert('Already friends or pending');
+ await fs.collection('friendships').add({members:[uid(),o.id],names:{[uid()]:user,[o.id]:o.data().name},status:'pending',from:uid()})}catch(e){fail(e)}}
+
+function newGroup(){const n=(prompt('Group name')||'').trim();if(!n)return;
+ fs.collection('groups').add({name:n,owner:uid(),members:[uid()],names:{[uid()]:user}}).catch(fail)}
+
+$('addm').onclick=()=>{const n=(prompt('Add which friend? (username)')||'').trim().toLowerCase();
+ const f=fr.find(f=>f.status==='accepted'&&other(f).name.toLowerCase()===n);
+ if(!f)return alert('Friend not found');const o=other(f);
+ fs.collection('groups').doc(cur.id).update({members:FV.arrayUnion(o.id),['names.'+o.id]:o.name}).catch(fail)};
+
+$('in').addEventListener('keydown',e=>{if(e.key!=='Enter')return;const v=e.target.value.trim();if(!v)return;e.target.value='';send(v)});
+$('clip').onclick=()=>$('file').click();
+$('file').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;if(f.size>7e5){alert('Max 700 KB');return}
+ const r=new FileReader();r.onload=()=>send('',{name:f.name,type:f.type,url:r.result});r.readAsDataURL(f)};
+
+function start(){stop();const u=uid();
+ unsubs=[fs.collection('groups').where('members','array-contains',u).onSnapshot(s=>{groups=s.docs.map(d=>({id:d.id,...d.data()}));drawList()},fail),
+ fs.collection('friendships').where('members','array-contains',u).onSnapshot(s=>{fr=s.docs.map(d=>({id:d.id,...d.data()}));drawList()},fail)];drawList()}
+function stop(){unsubs.forEach(f=>f());unsubs=[];if(unsubM)unsubM();unsubM=null;cur=null;groups=[];fr=[];$('msgs').innerHTML='';$('title').textContent='Select a chat';$('addm').hidden=true}
+
+const nameOf=u=>(u.displayName||u.email.split('@')[0]).slice(0,20);
+const err=e=>$('aerr').textContent=e.message.replace('Firebase: ','');
+const getYT=u=>{try{return JSON.parse(localStorage.getItem('yt_'+u.uid))}catch(e){return null}};
+const saveUser=u=>fs.collection('users').doc(u.uid).set({name:user},{merge:true}).catch(()=>{});
+$('up').onclick=()=>{const n=$('aname').value.trim();if(!n){$('aerr').textContent='Enter a username';return}
+ auth.createUserWithEmailAndPassword($('aemail').value,$('apass').value)
+ .then(c=>c.user.updateProfile({displayName:n}).then(()=>{user=n;drawList()})).catch(err)};
+$('inb').onclick=()=>auth.signInWithEmailAndPassword($('aemail').value,$('apass').value).catch(err);
+auth.onAuthStateChanged(u=>{
+ if(!u){stop();user='';$('auth').style.display='grid';$('yt').style.display='none';return}
+ $('auth').style.display='none';$('aerr').textContent='';
+ const y=getYT(u);
+ if(y){user=y.title.slice(0,20);$('yt').style.display='none';saveUser(u);start()}
+ else{user=nameOf(u);$('yt').style.display='grid'}});
+$('ytout').onclick=()=>auth.signOut();
+$('ytb').onclick=async()=>{
+ const u=auth.currentUser,p=new firebase.auth.GoogleAuthProvider();
+ p.addScope('https://www.googleapis.com/auth/youtube.readonly');
+ try{
+  const has=u.providerData.some(d=>d.providerId==='google.com');
+  const r=has?await u.reauthenticateWithPopup(p):await u.linkWithPopup(p);
+  const res=await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',{headers:{Authorization:'Bearer '+r.credential.accessToken}});
+  const d=await res.json();
+  if(!d.items||!d.items.length)throw new Error('No YouTube channel found on that Google account');
+  const ch=d.items[0];
+  try{localStorage.setItem('yt_'+u.uid,JSON.stringify({id:ch.id,title:ch.snippet.title}))}catch(e){}
+  user=ch.snippet.title.slice(0,20);$('yt').style.display='none';$('yterr').textContent='';saveUser(u);start();
+ }catch(e){$('yterr').textContent=e.message.replace('Firebase: ','')}};
