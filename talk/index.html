@@ -2,25 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chat Room</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chatroom</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <h1>💬 Chat Room</h1>
-  <button id="rename" hidden>Change name</button>
-</header>
-<div id="login" class="center">
-  <div class="stack">
-    <input id="guestname" placeholder="Pick a name" maxlength="24">
-    <button id="guest" class="send">Join</button>
-  </div>
-</div>
-<div id="msgs" hidden></div>
-<div class="row" id="sendrow" hidden>
-  <input id="text" placeholder="Type a message…" maxlength="500" autocomplete="off">
-  <button class="send" id="sendbtn" type="button">Send</button>
+<div id="app">
+ <div id="servers"><div class="srv">C</div></div>
+ <div id="side"><h3>Chat Server</h3><div id="list"></div><div id="me"></div></div>
+ <div id="main"><div id="top"></div><div id="msgs"></div>
+  <div id="form"><input id="in" autocomplete="off"></div></div>
 </div>
 <script src="script.js"></script>
 </body>
