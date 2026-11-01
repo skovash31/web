@@ -12,5 +12,23 @@
 </head>
 <body>
 <h1>Remaking this page rn /:</h1>
+
+<script>
+    const pressedKeys = new Set();
+
+    function openTalkPage() {
+        window.location.href = "password.html";
+    }
+
+    window.addEventListener("keydown", (event) => {
+        pressedKeys.add(event.key);
+        if (pressedKeys.has("G") && pressedKeys.has("R")) {
+            openTalkPage();
+        }
+    });
+
+    window.addEventListener("keyup", (event) => {
+        pressedKeys.delete(event.key);
+    });
 </body>
 </html>
