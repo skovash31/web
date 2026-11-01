@@ -1,0 +1,9 @@
+{
+  "apiKey": "AIzaSyBb8rgPJI3zphTvWanhTzEWz_TPI0hvdlE",
+  "authDomain": "chat-for-idle-devs.firebaseapp.com",
+  "projectId": "chat-for-idle-devs",
+  "storageBucket": "chat-for-idle-devs.firebasestorage.app",
+  "messagingSenderId": "602758870260",
+  "appId": "1:602758870260:web:96fee773513c01d1c8daa1",
+  "measurementId": "G-YXP0WYYHNQ"
+}

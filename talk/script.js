@@ -1,5 +1,6 @@
-// 1) Paste your Firebase web app config here (Firebase console > Project settings > Your apps)
-const firebaseConfig={apiKey:'YOUR_API_KEY',authDomain:'YOUR_PROJECT.firebaseapp.com',projectId:'YOUR_PROJECT',appId:'YOUR_APP_ID'};
+(async()=>{
+const txt=await (await fetch('firebase.txt')).text();
+const firebaseConfig=new Function('return '+txt.slice(txt.indexOf('{'),txt.lastIndexOf('}')+1))();
 firebase.initializeApp(firebaseConfig);
 const auth=firebase.auth(),fs=firebase.firestore(),FV=firebase.firestore.FieldValue;
 const $=id=>document.getElementById(id);
@@ -80,16 +81,22 @@ auth.onAuthStateChanged(u=>{
  if(y){user=y.title.slice(0,20);$('yt').style.display='none';saveUser(u);start()}
  else{user=nameOf(u);$('yt').style.display='grid'}});
 $('ytout').onclick=()=>auth.signOut();
+const ytProvider=()=>{const p=new firebase.auth.GoogleAuthProvider();p.addScope('https://www.googleapis.com/auth/youtube.readonly');return p};
+async function linkYT(u,token){
+ const res=await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',{headers:{Authorization:'Bearer '+token}});
+ const d=await res.json();
+ if(!d.items||!d.items.length)throw new Error('No YouTube channel found on that Google account');
+ const ch=d.items[0];
+ try{localStorage.setItem('yt_'+u.uid,JSON.stringify({id:ch.id,title:ch.snippet.title}))}catch(e){}
+ user=ch.snippet.title.slice(0,20);$('yt').style.display='none';$('yterr').textContent='';saveUser(u);start()}
+$('gb').onclick=async()=>{
+ try{const r=await auth.signInWithPopup(ytProvider());await linkYT(r.user,r.credential.accessToken)}
+ catch(e){const m=e.message.replace('Firebase: ','');$('aerr').textContent=m;$('yterr').textContent=m}};
 $('ytb').onclick=async()=>{
- const u=auth.currentUser,p=new firebase.auth.GoogleAuthProvider();
- p.addScope('https://www.googleapis.com/auth/youtube.readonly');
- try{
-  const has=u.providerData.some(d=>d.providerId==='google.com');
+ const u=auth.currentUser,p=ytProvider();
+ try{const has=u.providerData.some(d=>d.providerId==='google.com');
   const r=has?await u.reauthenticateWithPopup(p):await u.linkWithPopup(p);
-  const res=await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',{headers:{Authorization:'Bearer '+r.credential.accessToken}});
-  const d=await res.json();
-  if(!d.items||!d.items.length)throw new Error('No YouTube channel found on that Google account');
-  const ch=d.items[0];
-  try{localStorage.setItem('yt_'+u.uid,JSON.stringify({id:ch.id,title:ch.snippet.title}))}catch(e){}
-  user=ch.snippet.title.slice(0,20);$('yt').style.display='none';$('yterr').textContent='';saveUser(u);start();
- }catch(e){$('yterr').textContent=e.message.replace('Firebase: ','')}};
+  await linkYT(u,r.credential.accessToken)}
+ catch(e){$('yterr').textContent=e.message.replace('Firebase: ','')}};
+
+})().catch(e=>alert('Could not load firebase.txt (run via localhost or hosting): '+e.message));
