@@ -11,6 +11,14 @@ const col=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return`hsl($
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const other=f=>{const o=f.members.find(m=>m!==uid());return{id:o,name:(f.names||{})[o]||'?'}};
 const fail=e=>alert(e.message);
+let avatars={},lastMsgs=[];
+function mkAv(name,id){const a=el('div','av');const p=avatars[id];
+ if(p){a.style.background='url('+p+') center/cover'}else{a.textContent=(name||'?')[0].toUpperCase();a.style.background=col(name||'?')}return a}
+async function loadAv(ids){const miss=[...new Set(ids)].filter(x=>x&&!(x in avatars));if(!miss.length)return false;
+ await Promise.all(miss.map(id=>fs.collection('users').doc(id).get().then(d=>{avatars[id]=(d.exists&&d.data().photo)||''}).catch(()=>{avatars[id]=''})));return true}
+function toAvatar(file){return new Promise((res,rej)=>{const img=new Image(),r=new FileReader();
+ r.onload=()=>{img.onload=()=>{const c=document.createElement('canvas');c.width=c.height=96;const s=Math.min(img.width,img.height);
+ c.getContext('2d').drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,96,96);res(c.toDataURL('image/jpeg',.8))};img.onerror=rej;img.src=r.result};r.readAsDataURL(file)})}
 
 function drawList(){
  const L=$('list');L.innerHTML='';
@@ -23,15 +31,16 @@ function drawList(){
   else{const d=item(o.name,f,()=>{});const b=el('button',null,'Accept');b.onclick=()=>fs.collection('friendships').doc(f.id).update({status:'accepted'}).catch(fail);d.appendChild(b)}});
  head('Groups',newGroup);
  groups.forEach(g=>item('# '+g.name,g,()=>openChat({col:'groups',id:g.id,name:g.name})));
- const m=$('me');m.innerHTML='';const a=el('div','av',(user||'?')[0].toUpperCase());a.style.background=col(user||'?');
+ const m=$('me');m.innerHTML='';const a=mkAv(user||'?',uid());a.title='Change picture';a.style.cursor='pointer';a.onclick=()=>$('pf').click();
  const lo=el('button',null,'Log out');lo.onclick=()=>auth.signOut();const rn=el('button',null,'Rename');rn.onclick=()=>askName(user,false);m.append(a,user,rn,lo)}
 
 function draw(list){const box=$('msgs');box.innerHTML='';list.forEach(m=>{
- const r=el('div','m'),a=el('div','av',m.u[0].toUpperCase());a.style.background=col(m.u);
+ const r=el('div','m'),a=mkAv(m.u,m.uid);
  const b=el('div'),h=el('div'),x=el('div','x',m.x);
  h.append(el('span','n',m.u),el('span','t',(m.t&&m.t.toDate?m.t.toDate():new Date()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})));
  if(m.f){if(m.f.type.startsWith('image/')){const i=el('img');i.src=m.f.url;x.appendChild(i)}else{const l=el('a',null,'📄 '+m.f.name);l.href=m.f.url;l.download=m.f.name;x.appendChild(l)}}
- b.append(h,x);r.append(a,b);box.appendChild(r)});box.scrollTop=box.scrollHeight}
+ b.append(h,x);r.append(a,b);box.appendChild(r)});box.scrollTop=box.scrollHeight;
+ lastMsgs=list;loadAv(list.map(m=>m.uid)).then(c=>{if(c)draw(list)})}
 
 function openChat(c){cur=c;if(unsubM)unsubM();
  $('title').textContent=(c.col==='groups'?'# ':'@ ')+c.name;$('addm').hidden=c.col!=='groups';$('in').placeholder='Message '+c.name;drawList();
@@ -67,6 +76,8 @@ function start(){stop();const u=uid();
  fs.collection('friendships').where('members','array-contains',u).onSnapshot(s=>{fr=s.docs.map(d=>({id:d.id,...d.data()}));drawList()},fail)];drawList()}
 function stop(){unsubs.forEach(f=>f());unsubs=[];if(unsubM)unsubM();unsubM=null;cur=null;groups=[];fr=[];$('msgs').innerHTML='';$('title').textContent='Select a chat';$('addm').hidden=true}
 
+$('pf').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+ try{const d=await toAvatar(f);await fs.collection('users').doc(uid()).set({photo:d},{merge:true});avatars[uid()]=d;drawList();draw(lastMsgs)}catch(x){fail(x)}};
 const nameOf=u=>(u.displayName||u.email.split('@')[0]).slice(0,20);
 const err=e=>$('aerr').textContent=e.message.replace('Firebase: ','');
 let pendingName='',nmFirst=false;
@@ -91,5 +102,5 @@ auth.onAuthStateChanged(async u=>{
  try{const d=await fs.collection('users').doc(u.uid).get();
   if(d.exists&&d.data().name){user=d.data().name;try{localStorage.setItem('un_'+u.uid,user)}catch(e){}start();return}
   if(pendingName){const n=pendingName;pendingName='';try{await setName(n);start()}catch(e){askName(n,true,e.message)}return}
-  askName(nameOf(u),true)}catch(e){alert(e.message)}});
+  askName(nameOf(u),true)}catch(e){user=nameOf(u);drawList();$('title').textContent='Error: '+e.message}});
 })().catch(e=>alert('Could not load firebase.txt (run via localhost or hosting): '+e.message));
