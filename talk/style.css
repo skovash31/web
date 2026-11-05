@@ -57,3 +57,8 @@ html,body{height:100%;margin:0;background:var(--bg3);color:var(--tx);font-family
 #nme{color:#ed4245;font-size:13px;min-height:16px}
 #me button+button{margin-left:6px}
 #auth{display:none}
+#servers{overflow-y:auto}
+.srv{cursor:pointer;flex:none;user-select:none;font-size:20px}
+.srv.on{border-radius:14px}
+#me .info{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+#me small{color:var(--mu);font-size:11px}
