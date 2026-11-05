@@ -3,6 +3,7 @@ const txt=await (await fetch('firebase.txt')).text();
 const firebaseConfig=new Function('return '+txt.slice(txt.indexOf('{'),txt.lastIndexOf('}')+1))();
 firebase.initializeApp(firebaseConfig);
 const auth=firebase.auth(),fs=firebase.firestore(),FV=firebase.firestore.FieldValue;
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
 const $=id=>document.getElementById(id);
 let user='',cur=null,unsubs=[],unsubM=null,groups=[],fr=[];
 const uid=()=>auth.currentUser&&auth.currentUser.uid;
@@ -73,7 +74,7 @@ function askName(def,first,msg){nmFirst=first;$('nmi').value=def||'';$('nme').te
 async function setName(n){n=n.trim().slice(0,20);if(!n)throw new Error('Enter a username');
  const s=await fs.collection('users').where('name','==',n).limit(1).get();
  if(!s.empty&&s.docs[0].id!==uid())throw new Error('That username is taken');
- await fs.collection('users').doc(uid()).set({name:n},{merge:true});user=n;
+ await fs.collection('users').doc(uid()).set({name:n},{merge:true});user=n;try{localStorage.setItem('un_'+uid(),n)}catch(e){}
  auth.currentUser.updateProfile({displayName:n}).catch(()=>{})}
 $('nms').onclick=async()=>{try{await setName($('nmi').value);$('nm').style.display='none';if(nmFirst)start();else drawList()}catch(e){$('nme').textContent=e.message}};
 $('nmi').addEventListener('keydown',e=>{if(e.key==='Enter')$('nms').click()});
@@ -85,8 +86,10 @@ $('gb').onclick=()=>auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
 auth.onAuthStateChanged(async u=>{
  if(!u){stop();user='';$('auth').style.display='grid';$('nm').style.display='none';return}
  $('auth').style.display='none';$('aerr').textContent='';
+ let c=null;try{c=localStorage.getItem('un_'+u.uid)}catch(e){}
+ if(c){user=c;start();return}
  try{const d=await fs.collection('users').doc(u.uid).get();
-  if(d.exists&&d.data().name){user=d.data().name;start();return}
+  if(d.exists&&d.data().name){user=d.data().name;try{localStorage.setItem('un_'+u.uid,user)}catch(e){}start();return}
   if(pendingName){const n=pendingName;pendingName='';try{await setName(n);start()}catch(e){askName(n,true,e.message)}return}
   askName(nameOf(u),true)}catch(e){alert(e.message)}});
 })().catch(e=>alert('Could not load firebase.txt (run via localhost or hosting): '+e.message));
