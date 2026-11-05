@@ -36,12 +36,18 @@ function drawList(){
  const item=(t,key,fn)=>{const d=el('div','ch'+(cur&&cur.key===key?' on':''),t);d.onclick=fn;L.appendChild(d);return d};
  if(!S){head('Friends',addFriend);
   fr.forEach(f=>{const o=other(f);
-   if(f.status==='accepted')item('@ '+o.name,f.id,()=>openChat({key:f.id,path:'friendships/'+f.id+'/messages',name:o.name,dm:true}));
-   else if(f.from===uid())item(o.name+' (pending)',f.id,()=>{});
-   else{const d=item(o.name,f.id,()=>{});const b=el('button',null,'Accept');b.onclick=()=>fs.collection('friendships').doc(f.id).update({status:'accepted'}).catch(fail);d.appendChild(b)}})}
+   const xb=(label,fn)=>{const b=el('button',null,label);b.onclick=e=>{e.stopPropagation();fn()};return b};
+   const del=msg=>()=>{if(confirm(msg))fs.collection('friendships').doc(f.id).delete().catch(fail)};
+   if(f.status==='accepted'){const d=item('@ '+o.name,f.id,()=>openChat({key:f.id,path:'friendships/'+f.id+'/messages',name:o.name,dm:true}));d.appendChild(xb('Unfriend',del('Unfriend '+o.name+'?')))}
+   else if(f.from===uid()){const d=item(o.name+' (pending)',f.id,()=>{});d.appendChild(xb('Cancel',del('Cancel friend request to '+o.name+'?')))}
+   else{const d=item(o.name,f.id,()=>{});d.append(xb('Accept',()=>fs.collection('friendships').doc(f.id).update({status:'accepted'}).catch(fail)),xb('Decline',del('Decline request from '+o.name+'?')))}})}
  else{head('Channels',S.owner===uid()?newChannel:null);
-  S.channels.forEach(ch=>item('# '+ch,S.id+ch,()=>openChat({key:S.id+ch,path:'servers/'+S.id+'/channels/'+ch+'/messages',name:ch})));
-  item('🔑 Invite code','inv',()=>prompt('Share this invite code:',S.id))}
+  S.channels.forEach(ch=>{const d=item('# '+ch,S.id+ch,()=>openChat({key:S.id+ch,path:'servers/'+S.id+'/channels/'+ch+'/messages',name:ch}));
+   if(S.owner===uid()&&S.channels.length>1){const b=el('button',null,'✕');b.title='Delete channel';b.onclick=e=>{e.stopPropagation();if(!confirm('Delete #'+ch+'?'))return;
+    if(cur&&cur.key===S.id+ch)resetChat();fs.collection('servers').doc(S.id).update({channels:FV.arrayRemove(ch)}).catch(fail)};d.appendChild(b)}});
+  item('🔑 Invite code','inv',()=>prompt('Share this invite code:',S.id));
+  if(S.owner===uid())item('🗑 Delete server','del',()=>{if(confirm('Delete "'+S.name+'" for everyone? This cannot be undone.')){resetChat();fs.collection('servers').doc(S.id).delete().catch(fail)}});
+  else item('🚪 Leave server','leave',()=>{if(confirm('Leave "'+S.name+'"?')){resetChat();fs.collection('servers').doc(S.id).update({members:FV.arrayRemove(uid())}).catch(fail)}})}
  const m=$('me');m.innerHTML='';const a=mkAv(user||'?',uid());a.title='Change picture';a.style.cursor='pointer';a.onclick=()=>$('pf').click();
  const info=el('div','info',user);info.appendChild(el('small',null,'ID '+myNum));
  const rn=el('button',null,'Rename');rn.onclick=()=>askName(user,false);
@@ -51,13 +57,14 @@ function draw(list){const box=$('msgs');box.innerHTML='';list.forEach(m=>{
  const b=el('div'),h=el('div'),x=el('div','x',m.x);
  h.append(el('span','n',m.u),el('span','t',(m.t&&m.t.toDate?m.t.toDate():new Date()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})));
  if(m.f){if(m.f.type.startsWith('image/')){const i=el('img');i.src=m.f.url;x.appendChild(i)}else{const l=el('a',null,'📄 '+m.f.name);l.href=m.f.url;l.download=m.f.name;x.appendChild(l)}}
+ if(m.uid===uid()&&m.id&&cur){const dl=el('button','mdel','🗑');dl.title='Delete message';dl.onclick=()=>{if(confirm('Delete this message?'))fs.collection(cur.path).doc(m.id).delete().catch(fail)};h.appendChild(dl)}
  b.append(h,x);r.append(a,b);box.appendChild(r)});box.scrollTop=box.scrollHeight;
  lastMsgs=list;loadAv(list.map(m=>m.uid)).then(c=>{if(c)draw(list)})}
 
 function openChat(c){cur=c;if(unsubM)unsubM();
  $('title').textContent=(c.dm?'@ ':'# ')+c.name;$('in').placeholder='Message '+c.name;drawList();
  unsubM=fs.collection(c.path).orderBy('t').limitToLast(200)
- .onSnapshot(s=>draw(s.docs.map(d=>d.data({serverTimestamps:'estimate'}))),fail)}
+ .onSnapshot(s=>draw(s.docs.map(d=>({...d.data({serverTimestamps:'estimate'}),id:d.id}))),fail)}
 function send(x,f){if(!cur)return alert('Pick a friend or channel first');
  const d={u:user,uid:uid(),x,t:FV.serverTimestamp()};if(f)d.f=f;
  fs.collection(cur.path).add(d).catch(fail)}
@@ -89,12 +96,12 @@ async function ensureNum(){try{const ref=fs.collection('users').doc(uid()),d=awa
 function start(){stop();const u=uid();
  unsubs=[fs.collection('servers').where('members','array-contains',u).onSnapshot(s=>{servers=s.docs.map(d=>({id:d.id,...d.data()}));
   if(view!=='home'&&!servers.some(x=>x.id===view)){view='home';cur=null;resetChat()}drawAll()},fail),
- fs.collection('friendships').where('members','array-contains',u).onSnapshot(s=>{fr=s.docs.map(d=>({id:d.id,...d.data()}));drawList()},fail)];
+ fs.collection('friendships').where('members','array-contains',u).onSnapshot(s=>{fr=s.docs.map(d=>({id:d.id,...d.data()}));if(cur&&cur.dm&&!fr.some(f=>f.id===cur.key))resetChat();drawList()},fail)];
  drawAll();ensureNum()}
 function stop(){unsubs.forEach(f=>f());unsubs=[];resetChat();cur=null;servers=[];fr=[];view='home';$('servers').innerHTML='';$('list').innerHTML='';$('addm').hidden=true}
 $('pf').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
  try{const d=await toAvatar(f);await fs.collection('users').doc(uid()).set({photo:d},{merge:true});avatars[uid()]=d;drawList();draw(lastMsgs)}catch(x){fail(x)}};
-const nameOf=u=>(u.displayName||u.email.split('@')[0]).slice(0,20);
+const nameOf=u=>'User';
 const err=e=>$('aerr').textContent=e.message.replace('Firebase: ','');
 let pendingName='',nmFirst=false;
 function askName(def,first,msg){nmFirst=first;$('nmi').value=def||'';$('nme').textContent=msg||'';$('nmc').style.display=first?'none':'';$('nm').style.display='grid';$('nmi').focus()}
@@ -118,5 +125,5 @@ auth.onAuthStateChanged(async u=>{
  try{const d=await fs.collection('users').doc(u.uid).get();
   if(d.exists&&d.data().name){user=d.data().name;try{localStorage.setItem('un_'+u.uid,user)}catch(e){}start();return}
   if(pendingName){const n=pendingName;pendingName='';try{await setName(n);start()}catch(e){askName(n,true,e.message)}return}
-  askName(nameOf(u),true)}catch(e){user=nameOf(u);drawList();$('title').textContent='Error: '+e.message}});
+  askName('',true)}catch(e){user='User';drawList();$('title').textContent='Error: '+e.message}});
 })().catch(e=>alert('Could not load firebase.txt (run via localhost or hosting): '+e.message));
