@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chatroom</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="auth"><div class="box"><h2>Welcome</h2><input id="aname" placeholder="Username (sign up only)"><input id="aemail" type="email" placeholder="Email"><input id="apass" type="password" placeholder="Password (6+ chars)"><button id="up">Sign up</button><button id="inb" class="alt">Log in</button><button id="gb" class="alt">Sign in with Google</button><div id="aerr"></div></div></div>
+<div id="nm"><div class="box"><h2>Pick a username</h2><input id="nmi" maxlength="20" placeholder="Username"><button id="nms">Save</button><button id="nmc" class="alt">Cancel</button><div id="nme"></div></div></div>
+<div id="app">
+ <div id="servers"></div>
+ <div id="side"><h3 id="stitle">Home</h3><div id="list"></div><div id="me"></div></div>
+ <div id="main"><div id="top"><span id="title">Select a chat</span><button id="addm" hidden>Add by ID</button></div><div id="msgs"></div>
+  <div id="form"><button id="clip" type="button" title="Attach">📎</button><input id="file" type="file" hidden><input id="pf" type="file" accept="image/*" hidden><input id="in" autocomplete="off"></div></div>
+</div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
