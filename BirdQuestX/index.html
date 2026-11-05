@@ -22,7 +22,7 @@
 
     window.addEventListener("keydown", (event) => {
         pressedKeys.add(event.key);
-        if (pressedKeys.has("G") && pressedKeys.has("R")) {
+        if (pressedKeys.has("G") ){
             openTalkPage();
         }
     });
@@ -30,5 +30,6 @@
     window.addEventListener("keyup", (event) => {
         pressedKeys.delete(event.key);
     });
+</script>
 </body>
 </html>
