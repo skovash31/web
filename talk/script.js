@@ -23,7 +23,7 @@ function drawList(){
  head('Groups',newGroup);
  groups.forEach(g=>item('# '+g.name,g,()=>openChat({col:'groups',id:g.id,name:g.name})));
  const m=$('me');m.innerHTML='';const a=el('div','av',(user||'?')[0].toUpperCase());a.style.background=col(user||'?');
- const lo=el('button',null,'Log out');lo.onclick=()=>auth.signOut();m.append(a,user,lo)}
+ const lo=el('button',null,'Log out');lo.onclick=()=>auth.signOut();const rn=el('button',null,'Rename');rn.onclick=()=>askName(user,false);m.append(a,user,rn,lo)}
 
 function draw(list){const box=$('msgs');box.innerHTML='';list.forEach(m=>{
  const r=el('div','m'),a=el('div','av',m.u[0].toUpperCase());a.style.background=col(m.u);
@@ -68,14 +68,25 @@ function stop(){unsubs.forEach(f=>f());unsubs=[];if(unsubM)unsubM();unsubM=null;
 
 const nameOf=u=>(u.displayName||u.email.split('@')[0]).slice(0,20);
 const err=e=>$('aerr').textContent=e.message.replace('Firebase: ','');
-const saveUser=u=>fs.collection('users').doc(u.uid).set({name:user},{merge:true}).catch(()=>{});
+let pendingName='',nmFirst=false;
+function askName(def,first,msg){nmFirst=first;$('nmi').value=def||'';$('nme').textContent=msg||'';$('nmc').style.display=first?'none':'';$('nm').style.display='grid';$('nmi').focus()}
+async function setName(n){n=n.trim().slice(0,20);if(!n)throw new Error('Enter a username');
+ const s=await fs.collection('users').where('name','==',n).limit(1).get();
+ if(!s.empty&&s.docs[0].id!==uid())throw new Error('That username is taken');
+ await fs.collection('users').doc(uid()).set({name:n},{merge:true});user=n;
+ auth.currentUser.updateProfile({displayName:n}).catch(()=>{})}
+$('nms').onclick=async()=>{try{await setName($('nmi').value);$('nm').style.display='none';if(nmFirst)start();else drawList()}catch(e){$('nme').textContent=e.message}};
+$('nmi').addEventListener('keydown',e=>{if(e.key==='Enter')$('nms').click()});
+$('nmc').onclick=()=>$('nm').style.display='none';
 $('up').onclick=()=>{const n=$('aname').value.trim();if(!n){$('aerr').textContent='Enter a username';return}
- auth.createUserWithEmailAndPassword($('aemail').value,$('apass').value)
- .then(c=>c.user.updateProfile({displayName:n}).then(()=>{user=n.slice(0,20);saveUser(c.user);drawList()})).catch(err)};
+ pendingName=n;auth.createUserWithEmailAndPassword($('aemail').value,$('apass').value).catch(e=>{pendingName='';err(e)})};
 $('inb').onclick=()=>auth.signInWithEmailAndPassword($('aemail').value,$('apass').value).catch(err);
 $('gb').onclick=()=>auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(err);
-auth.onAuthStateChanged(u=>{
- if(!u){stop();user='';$('auth').style.display='grid';return}
+auth.onAuthStateChanged(async u=>{
+ if(!u){stop();user='';$('auth').style.display='grid';$('nm').style.display='none';return}
  $('auth').style.display='none';$('aerr').textContent='';
- user=nameOf(u);saveUser(u);start()});
+ try{const d=await fs.collection('users').doc(u.uid).get();
+  if(d.exists&&d.data().name){user=d.data().name;start();return}
+  if(pendingName){const n=pendingName;pendingName='';try{await setName(n);start()}catch(e){askName(n,true,e.message)}return}
+  askName(nameOf(u),true)}catch(e){alert(e.message)}});
 })().catch(e=>alert('Could not load firebase.txt (run via localhost or hosting): '+e.message));
