@@ -3,28 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Home</title>
+<title>BirdQuestX</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,sans-serif;background:#000}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}
 
-/* Each page keeps the 900x600 design ratio and scales to any screen */
-.page{
-  display:none;
+/* Full screen stage; image stretches to fill, buttons are placed in % of the screen */
+.stage{
   position:relative;
-  width:100%;
+  width:100vw;
   height:100vh;
   height:100dvh;
-  margin:0;
   overflow:hidden;
   container-type:inline-size;
 }
-.page.active{display:block}
+.stage img.bg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:fill;
+}
 
-#home{background:#fff url("../BQX assets/Menus/BirdQuestX.png") center/cover no-repeat}
-#about{background:#f3f4ff}
-
-/* Buttons are positioned in % of the page, text sizes in cqw (% of page width) */
 .btn{
   position:absolute;
   display:flex;
@@ -37,18 +37,17 @@ body{margin:0;font-family:system-ui,sans-serif;background:#000}
 }
 .play{left:38.6%;top:64.7%;width:16.6%;height:9.8%;font-size:4.8cqw;color:#030303}
 .shop{left:38.9%;top:74.3%;width:15.6%;height:7.3%;font-size:3.4cqw;color:#050505}
-.about{left:84.4%;top:92.7%;width:15.6%;height:7.3%;font-size:1.8cqw;color:#fff;background:#090606}
-.back{left:4%;top:5%;width:15%;height:7%;font-size:2cqw;color:#fff;background:#090606}
+.about{right:0;bottom:0;width:15.6%;height:7.3%;font-size:1.8cqw;color:#fff;background:#090606}
 </style>
 </head>
 <body>
 
-<main>
-  <section id="home" class="page active">
-    <a class="btn play"  href="Game/index.html">Play</a>
-    <a class="btn shop"  href="Extra/Shop.html">Shop</a>
-    <a class="btn about" href="Extra/about.html">About</a>
-  </section>
+<main class="stage">
+  <img class="bg" src="BQX%20assets/Menus/BirdQuestX.png" alt="">
+  <a class="btn play"  href="Game/index.html">Play</a>
+  <a class="btn shop"  href="Extra/Shop.html">Shop</a>
+  <a class="btn about" href="Extra/about.html">About</a>
 </main>
+
 </body>
 </html>
