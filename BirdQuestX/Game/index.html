@@ -1,39 +1,52 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:#000}
+
+/* Each page keeps the 900x600 design ratio and scales to any screen */
+.page{
+  display:none;
+  position:relative;
+  width:100%;
+  height:100vh;
+  height:100dvh;
+  margin:0;
+  overflow:hidden;
+  container-type:inline-size;
+}
+.page.active{display:block}
+
+#home{background:#fff url("assets/img1.png") center/cover no-repeat}
+#about{background:#f3f4ff}
+
+/* Buttons are positioned in % of the page, text sizes in cqw (% of page width) */
+.btn{
+  position:absolute;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:8px;
+  font-weight:700;
+  text-decoration:none;
+  background:transparent;
+}
+.play{left:30%;top:64.7%;width:40%;height:9.8%;font-size:4.8cqw;color:#030303;white-space:nowrap}
+.shop{left:38.9%;top:74.3%;width:15.6%;height:7.3%;font-size:3.4cqw;color:#050505}
+.about{left:84.4%;top:92.7%;width:15.6%;height:7.3%;font-size:1.8cqw;color:#fff;background:#090606}
+.back{left:4%;top:5%;width:15%;height:7%;font-size:2cqw;color:#fff;background:#090606}
+</style>
 </head>
 <body>
 
-<div class="screen">
-    <a href="../Extra/about.html">
-        <img class="title-logo" src="../BQX assets/Main Page/BirdQuestX Title.png" alt="BirdQuestX Title">
-    </a>
-
-    <a href="game/game.html">
-        <img class="title-logo" src="../BQX assets/Main Page/Start.png" alt="Start Game">
-    </a>
-</div>
-
-<audio id="main-music" src="../BQX assets/music/Pixel Feathers.mp3" loop></audio>
-
-<script>
-    const mainMusic = document.getElementById("main-music");
-
-    document.addEventListener("keydown", function (event) {
-        if (event.key.toLowerCase() === "l") {
-            if (mainMusic.paused) {
-                mainMusic.play();
-            } else {
-                mainMusic.pause();
-            }
-        }
-
-        if (event.key.toLowerCase() === "p") {
-            window.location.href = "../Game/Beta/Beta Testing Pick.html";
-        }
-    });
-</script>
-
+<main>
+  <section id="home" class="page active">
+    <a class="btn play" href="game/game.html">Start Fight</a>
+  </section>
+</main>
+</body>
 </html>
