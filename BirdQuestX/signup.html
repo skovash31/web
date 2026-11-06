@@ -34,7 +34,9 @@
   }
   input { padding: 0 12px; border: 0; background: var(--field); color: var(--ink); }
   button { border: 0; cursor: pointer; font-weight: 600; }
+  button:disabled { opacity: .6; cursor: wait; }
   .primary { margin-top: 6px; background: var(--field); color: var(--ink); }
+  .error { margin: 0; min-height: 18px; font-size: 13px; color: #ff8a8a; text-align: center; }
   .divider { margin: 22px 0; text-align: center; font-size: 13px; opacity: .6; }
   .google { background: transparent; color: var(--field); border: 1px solid #5a5c5c; font-weight: 500; }
   .login { margin: 24px 0 0; font-size: 13px; text-align: center; opacity: .85; }
@@ -45,16 +47,75 @@
 <body>
   <main>
     <h1>Sign up</h1>
-    <form onsubmit="return false">
-      <label>Username <input type="text" name="username" autocomplete="username"></label>
-      <label>Email <input type="email" name="email" autocomplete="email"></label>
-      <label>Password <input type="password" name="password" autocomplete="new-password"></label>
-      <label>Confirm password <input type="password" name="confirm" autocomplete="new-password"></label>
+    <form id="signupForm">
+      <label>Username <input type="text" name="username" autocomplete="username" required></label>
+      <label>Email <input type="email" name="email" autocomplete="email" required></label>
+      <label>Password <input type="password" name="password" autocomplete="new-password" minlength="6" required></label>
+      <label>Confirm password <input type="password" name="confirm" autocomplete="new-password" required></label>
+      <p class="error" id="error" role="alert"></p>
       <button class="primary" type="submit">Sign up</button>
     </form>
     <p class="divider">or</p>
-    <button class="google" type="button">Sign up with Google</button>
+    <button class="google" id="googleBtn" type="button">Sign up with Google</button>
     <p class="login">Already have an account? <a href="index.html">Log in</a></p>
   </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      updateProfile,
+      GoogleAuthProvider,
+      signInWithPopup
+    } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
+
+    const app = initializeApp({
+      apiKey: "AIzaSyB9EB8SglOnvGFt8M0MEyJKCuCOlAptZqc",
+      authDomain: "bird-quest-x.firebaseapp.com",
+      projectId: "bird-quest-x",
+      storageBucket: "bird-quest-x.firebasestorage.app",
+      messagingSenderId: "254426386448",
+      appId: "1:254426386448:web:c9cabe6d308f3461b6fa95"
+    });
+    const auth = getAuth(app);
+
+    const form = document.getElementById("signupForm");
+    const errorBox = document.getElementById("error");
+    const googleBtn = document.getElementById("googleBtn");
+    const submitBtn = form.querySelector("button[type=submit]");
+
+    function showError(msg) { errorBox.textContent = msg; }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      showError("");
+      const f = e.target;
+
+      if (f.password.value !== f.confirm.value) {
+        return showError("Passwords don't match.");
+      }
+
+      submitBtn.disabled = true;
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, f.email.value.trim(), f.password.value);
+        await updateProfile(cred.user, { displayName: f.username.value.trim() });
+        location.href = "mainpage.html";
+      } catch (err) {
+        showError(err.message.replace("Firebase: ", ""));
+        submitBtn.disabled = false;
+      }
+    });
+
+    googleBtn.addEventListener("click", async () => {
+      showError("");
+      try {
+        await signInWithPopup(auth, new GoogleAuthProvider());
+        location.href = "mainpage.html";
+      } catch (err) {
+        showError(err.message.replace("Firebase: ", ""));
+      }
+    });
+  </script>
 </body>
 </html>
