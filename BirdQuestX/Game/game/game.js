@@ -1,8 +1,12 @@
 // Game configuration
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
-const SQUARE_SIZE = 30;
-const MOVE_SPEED = 5;
+const SQUARE_SIZE = 44;
+const MOVE_SPEED = 4;
+const GRAVITY = 0.7;
+const JUMP_FORCE = 14;
+const GROUND_HEIGHT = 58;
+const GROUND_Y = CANVAS_HEIGHT - GROUND_HEIGHT;
 const PEER_PREFIX = 'bqx-';
 const PUBLIC_PREFIX = 'bqx-public-';
 const PUBLIC_SLOTS = 10;
@@ -11,6 +15,13 @@ const ATTACK_RANGE = 60;      // distance between centers that counts as a hit
 const ATTACK_DURATION = 200;  // ms the attack is active
 const ATTACK_COOLDOWN = 500;  // ms between attacks
 const ATTACK_DAMAGE = 10;
+
+const birdIdle = new Image();
+birdIdle.src = '../../BQX assets/Game Assets/Birds/Chicken/Chicken Idle.png';
+const birdFly = new Image();
+birdFly.src = '../../BQX assets/Game Assets/Birds/Chicken/Chicken Fly.png';
+const groundImage = new Image();
+groundImage.src = '../../BQX assets/Game Assets/ground.png';
 
 // Game state
 let canvas, ctx;
@@ -27,8 +38,20 @@ let resultText = '';
 const newKeys = () => ({ w: false, a: false, s: false, d: false, attack: false, block: false });
 
 const makePlayer = (x, color) => ({
-    x, y: 300, color, keys: newKeys(),
-    hp: MAX_HP, attacking: false, lastAttack: 0, hitDone: false
+    x,
+    y: GROUND_Y - SQUARE_SIZE,
+    width: SQUARE_SIZE,
+    height: SQUARE_SIZE,
+    color,
+    vx: 0,
+    vy: 0,
+    onGround: true,
+    facing: 1,
+    keys: newKeys(),
+    hp: MAX_HP,
+    attacking: false,
+    lastAttack: 0,
+    hitDone: false
 });
 
 let player1 = makePlayer(100, '#4CAF50');
@@ -399,14 +422,86 @@ function endRound(iWon) {
 
 /* ---------- Loop & drawing ---------- */
 
-function updatePlayer(player) {
-    if (player.keys.w) player.y -= MOVE_SPEED;
-    if (player.keys.s) player.y += MOVE_SPEED;
-    if (player.keys.a) player.x -= MOVE_SPEED;
-    if (player.keys.d) player.x += MOVE_SPEED;
+function getPlayerRect(player) {
+    return {
+        left: player.x,
+        right: player.x + player.width,
+        top: player.y,
+        bottom: player.y + player.height
+    };
+}
 
-    player.x = Math.max(0, Math.min(CANVAS_WIDTH - SQUARE_SIZE, player.x));
-    player.y = Math.max(0, Math.min(CANVAS_HEIGHT - SQUARE_SIZE, player.y));
+function resolvePlayerOverlap(player, other) {
+    const rectA = getPlayerRect(player);
+    const rectB = getPlayerRect(other);
+    const overlaps = rectA.left < rectB.right && rectA.right > rectB.left && rectA.top < rectB.bottom && rectA.bottom > rectB.top;
+
+    if (!overlaps) return;
+
+    const overlapX = Math.min(rectA.right - rectB.left, rectB.right - rectA.left);
+    const overlapY = Math.min(rectA.bottom - rectB.top, rectB.bottom - rectA.top);
+
+    if (overlapX < overlapY) {
+        if (player.x < other.x) {
+            player.x = rectB.left - player.width;
+            other.x = rectA.right;
+        } else {
+            player.x = rectB.right;
+            other.x = rectA.left - other.width;
+        }
+    } else {
+        if (player.y < other.y) {
+            player.y = rectB.top - player.height;
+            player.vy = 0;
+            player.onGround = true;
+        } else {
+            player.y = rectB.bottom;
+            player.vy = 0;
+        }
+    }
+}
+
+function updatePlayer(player) {
+    const moveDir = (player.keys.d ? 1 : 0) - (player.keys.a ? 1 : 0);
+    if (moveDir !== 0) {
+        player.facing = moveDir > 0 ? 1 : -1;
+        player.vx = moveDir * MOVE_SPEED;
+    } else {
+        player.vx = 0;
+    }
+
+    if (player.keys.w && player.onGround) {
+        player.vy = -JUMP_FORCE;
+        player.onGround = false;
+    }
+
+    if (!player.onGround) {
+        player.vy += GRAVITY;
+    }
+
+    const opponent = isHost ? player2 : player1;
+    player.x += player.vx;
+    player.x = Math.max(0, Math.min(CANVAS_WIDTH - player.width, player.x));
+    resolvePlayerOverlap(player, opponent);
+
+    player.y += player.vy;
+    if (player.y + player.height >= GROUND_Y) {
+        player.y = GROUND_Y - player.height;
+        player.vy = 0;
+        player.onGround = true;
+    } else {
+        player.onGround = false;
+    }
+    resolvePlayerOverlap(player, opponent);
+}
+
+function drawGround() {
+    ctx.fillStyle = '#7b5f2b';
+    ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, GROUND_HEIGHT);
+
+    if (groundImage.complete) {
+        ctx.drawImage(groundImage, 0, GROUND_Y, CANVAS_WIDTH, GROUND_HEIGHT);
+    }
 }
 
 function gameLoop() {
@@ -433,6 +528,7 @@ function gameLoop() {
         ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(CANVAS_WIDTH, i); ctx.stroke();
     }
 
+    drawGround();
     drawSquare(player1, 'P1');
     drawSquare(player2, 'P2');
 
@@ -450,40 +546,47 @@ function gameLoop() {
 }
 
 function drawSquare(player, label) {
-    const { x, y, color, keys, hp, attacking } = player;
+    const { x, y, width, height, color, keys, hp, attacking, facing } = player;
+    const sprite = Math.abs(player.vx) > 0.1 ? birdFly : birdIdle;
+    const drawX = x + width / 2;
+    const drawY = y + height / 2;
 
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
-
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
+    ctx.save();
+    ctx.translate(drawX, drawY);
+    ctx.scale(facing, 1);
+    ctx.translate(-width / 2, -height / 2);
+    if (sprite.complete) {
+        ctx.drawImage(sprite, 0, 0, width, height);
+    } else {
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, width, height);
+    }
+    ctx.restore();
 
     if (keys.block) {
         ctx.strokeStyle = '#00e5ff';
         ctx.lineWidth = 4;
-        ctx.strokeRect(x - 6, y - 6, SQUARE_SIZE + 12, SQUARE_SIZE + 12);
+        ctx.strokeRect(x - 6, y - 6, width + 12, height + 12);
     }
 
     if (attacking) {
         ctx.strokeStyle = '#ffeb3b';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(x + SQUARE_SIZE / 2, y + SQUARE_SIZE / 2, SQUARE_SIZE * 1.3, 0, Math.PI * 2);
+        ctx.arc(x + width / 2, y + height / 2, width * 1.1, 0, Math.PI * 2);
         ctx.stroke();
     }
 
-    // Health bar
     ctx.fillStyle = '#400';
-    ctx.fillRect(x - 10, y - 14, SQUARE_SIZE + 20, 6);
+    ctx.fillRect(x - 10, y - 14, width + 20, 6);
     ctx.fillStyle = hp > 30 ? '#4CAF50' : '#f44336';
-    ctx.fillRect(x - 10, y - 14, (SQUARE_SIZE + 20) * (hp / MAX_HP), 6);
+    ctx.fillRect(x - 10, y - 14, (width + 20) * (hp / MAX_HP), 6);
 
     ctx.fillStyle = 'white';
     ctx.font = 'bold 12px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, x + SQUARE_SIZE / 2, y + SQUARE_SIZE / 2);
+    ctx.fillText(label, x + width / 2, y + height / 2);
 }
 
 function showStatus(message, type) {
