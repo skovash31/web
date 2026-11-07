@@ -46,7 +46,7 @@
 <body>
   <main>
     <h1>Log in</h1>
-    <form onsubmit="return false">
+    <form id="loginForm">
       <label>Username or email <input type="text" name="user" autocomplete="username"></label>
       <label>Password <input type="password" name="password" autocomplete="current-password"></label>
       <button class="primary" type="submit">Log in</button>
@@ -71,9 +71,31 @@
       appId: "1:254426386448:web:c9cabe6d308f3461b6fa95"
     });
     const auth = getAuth(app);
+    const accountKey = 'birdQuestXAccount';
+
+    function rememberAccount(userName) {
+      localStorage.setItem(accountKey, JSON.stringify({
+        username: userName || 'Player',
+        loggedIn: true
+      }));
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const username = document.querySelector('#loginForm input[name="user"]').value.trim();
+      const password = document.querySelector('#loginForm input[name="password"]').value.trim();
+
+      if (!username || !password) return;
+
+      rememberAccount(username);
+      location.href = 'mainpage.html';
+    });
 
     onAuthStateChanged(auth, (user) => {
-      if (user) location.href = "mainpage.html";
+      if (user) {
+        rememberAccount(user.displayName || user.email || 'Google User');
+        location.href = 'mainpage.html';
+      }
     });
 
     document.getElementById("googleBtn").addEventListener("click", async () => {
@@ -81,6 +103,7 @@
       errorBox.textContent = "";
       try {
         await signInWithPopup(auth, new GoogleAuthProvider());
+        rememberAccount('Google User');
         location.href = "mainpage.html";
       } catch (err) {
         errorBox.textContent = err.message.replace("Firebase: ", "");

@@ -40,6 +40,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
   letter-spacing:0.03em;
   text-align:center;
   white-space:nowrap;
+  display:none;
 }
 
 .btn{
@@ -61,11 +62,34 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
 
 <main class="stage">
   <img class="bg" src="BQX%20assets/Menus/BirdQuestX.png" alt="">
-  <p class="account-note">You need an account to play this game.</p>
-  <a class="btn play" href="Game/index.html">Play</a>
+  <p class="account-note" id="accountNote">You need an account to play this game.</p>
+  <a class="btn play" id="playBtn" href="Game/index.html">Play</a>
   <a class="btn shop" href="Extra/Shop.html">Shop</a>
   <a class="btn about" href="Extra/about.html">About</a>
 </main>
+
+<script>
+  const playBtn = document.getElementById('playBtn');
+  const accountNote = document.getElementById('accountNote');
+  const accountKey = 'birdQuestXAccount';
+
+  function hasAccount() {
+    try {
+      const value = localStorage.getItem(accountKey);
+      return Boolean(value && value !== 'null' && value !== 'logged-out');
+    } catch (error) {
+      return false;
+    }
+  }
+
+  if (!hasAccount()) {
+    accountNote.style.display = 'block';
+    playBtn.href = 'index.html';
+  } else {
+    accountNote.style.display = 'none';
+    playBtn.href = 'Game/index.html';
+  }
+</script>
 
 </body>
 </html>
