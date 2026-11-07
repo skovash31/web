@@ -1,5 +1,18 @@
 'use strict';
 
+import {
+    get,
+    onValue,
+    off,
+    auth,
+    database,
+    onAuthStateChanged,
+    ref,
+    remove,
+    set,
+    update
+} from "../accounts/firebase.js";
+
 /* =====================================================================
    Config
    ===================================================================== */
@@ -74,6 +87,10 @@ let joinTimer = null;
 let myName = 'Player';
 let selectedCharacter = null;
 let opponentName = 'Opponent';
+let signedInUser = null;
+let friendRefs = [];
+let currentFriends = {};
+let incomingFriendRequests = {};
 
 let loopRunning = false;
 
@@ -134,6 +151,8 @@ function init() {
     [
         'profile-screen', 'menu-screen', 'game-screen',
         'user-badge', 'user-badge-name', 'username-input', 'confirm-character-btn',
+        'player-id', 'copy-player-id-btn', 'add-friend-form', 'friend-player-id',
+        'friends-status', 'friend-requests', 'friend-list',
         'connection-status', 'your-room-code', 'room-code', 'room-display',
         'hud-p1-name', 'hud-p2-name', 'hud-p1-pips', 'hud-p2-pips', 'hud-round',
         'match-over', 'match-result', 'match-score', 'rematch-status',
@@ -146,6 +165,8 @@ function init() {
     groundImage = loadImage('Game Assets/ground.png');
 
     setupProfile();
+    setupFriends();
+    onAuthStateChanged(auth, handleAuthState);
 
     document.getElementById('random-match-btn').addEventListener('click', randomMatch);
     document.getElementById('create-room-btn').addEventListener('click', createRoom);
@@ -249,6 +270,203 @@ function setupProfile() {
     });
 
     updateConfirm();
+}
+
+function setupFriends() {
+    ui.addFriendForm.addEventListener('submit', sendFriendRequest);
+    ui.copyPlayerIdBtn.addEventListener('click', copyPlayerId);
+}
+
+async function handleAuthState(user) {
+    friendRefs.forEach(path => off(ref(database, path)));
+    friendRefs = [];
+    signedInUser = user;
+    currentFriends = {};
+    incomingFriendRequests = {};
+    renderFriends();
+
+    ui.copyPlayerIdBtn.disabled = !user;
+    ui.addFriendForm.querySelector('button').disabled = !user;
+    ui.friendPlayerId.disabled = !user;
+    ui.playerId.textContent = user ? user.uid : 'Sign in to load';
+    if (!user) {
+        showFriendsMessage('Sign in with your account to use friends.', 'error');
+        return;
+    }
+
+    try {
+        const profileRef = ref(database, `users/${user.uid}/profile`);
+        const profileSnapshot = await get(profileRef);
+        if (signedInUser !== user) return;
+        if (!profileSnapshot.exists()) {
+            const username = cleanName(user.displayName || user.email || loadName()) || 'Player';
+            await set(profileRef, { playerId: user.uid, username });
+        }
+        await set(ref(database, `playerIds/${user.uid}`), user.uid);
+
+        const friendsPath = `users/${user.uid}/friends`;
+        const requestsPath = `friendRequests/${user.uid}`;
+        friendRefs = [friendsPath, requestsPath];
+        onValue(ref(database, friendsPath), (snapshot) => {
+            currentFriends = snapshot.val() || {};
+            renderFriends();
+        }, showFriendDatabaseError);
+        onValue(ref(database, requestsPath), (snapshot) => {
+            incomingFriendRequests = snapshot.val() || {};
+            renderFriends();
+        }, showFriendDatabaseError);
+        showFriendsMessage('', '');
+    } catch (error) {
+        showFriendDatabaseError(error);
+    }
+}
+
+async function sendFriendRequest(event) {
+    event.preventDefault();
+    if (!signedInUser) return showFriendsMessage('Sign in to add friends.', 'error');
+
+    const playerId = ui.friendPlayerId.value.trim();
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(playerId)) {
+        return showFriendsMessage('Enter a valid Player ID.', 'error');
+    }
+    if (playerId === signedInUser.uid) {
+        return showFriendsMessage("You can't add yourself.", 'error');
+    }
+
+    showFriendsMessage('Looking up Player ID...', 'info');
+    try {
+        const recipientSnapshot = await get(ref(database, `playerIds/${playerId}`));
+        if (!recipientSnapshot.exists()) {
+            return showFriendsMessage('Player ID not found.', 'error');
+        }
+        const recipientUid = recipientSnapshot.val();
+        if (currentFriends[recipientUid]) {
+            return showFriendsMessage('You are already friends.', 'info');
+        }
+        if (incomingFriendRequests[recipientUid]) {
+            return showFriendsMessage('This player already sent you a request. Accept it below.', 'info');
+        }
+
+        const requestRef = ref(database, `friendRequests/${recipientUid}/${signedInUser.uid}`);
+        const requestSnapshot = await get(requestRef);
+        if (requestSnapshot.exists()) {
+            return showFriendsMessage('A friend request is already pending.', 'info');
+        }
+
+        await set(requestRef, { createdAt: Date.now() });
+        ui.friendPlayerId.value = '';
+        showFriendsMessage('Friend request sent.', 'success');
+    } catch (error) {
+        showFriendDatabaseError(error);
+    }
+}
+
+async function copyPlayerId() {
+    if (!signedInUser) return;
+    try {
+        await navigator.clipboard.writeText(signedInUser.uid);
+        showFriendsMessage('Player ID copied.', 'success');
+    } catch (error) {
+        showFriendsMessage('Could not copy the Player ID. Select and copy it instead.', 'error');
+    }
+}
+
+function renderFriends() {
+    if (!ui.friendList || !ui.friendRequests) return;
+    ui.friendRequests.replaceChildren();
+    ui.friendList.replaceChildren();
+
+    Object.keys(incomingFriendRequests).forEach(senderUid => {
+        const row = makeFriendEntry(senderUid);
+        const accept = makeFriendAction('Accept', async () => {
+            try {
+                await update(ref(database), {
+                    [`users/${signedInUser.uid}/friends/${senderUid}`]: true,
+                    [`users/${senderUid}/friends/${signedInUser.uid}`]: true
+                });
+                await remove(ref(database, `friendRequests/${signedInUser.uid}/${senderUid}`));
+                showFriendsMessage('Friend request accepted.', 'success');
+            } catch (error) {
+                showFriendDatabaseError(error);
+            }
+        });
+        const decline = makeFriendAction('Decline', async () => {
+            try {
+                await remove(ref(database, `friendRequests/${signedInUser.uid}/${senderUid}`));
+            } catch (error) {
+                showFriendDatabaseError(error);
+            }
+        });
+        row.append(accept, decline);
+        ui.friendRequests.appendChild(row);
+    });
+
+    Object.keys(currentFriends).forEach(async friendUid => {
+        const row = document.createElement('li');
+        row.className = 'friend-entry';
+        const label = document.createElement('span');
+        label.textContent = 'Loading friend...';
+        row.appendChild(label);
+        row.appendChild(makeFriendAction('Remove', async () => {
+            try {
+                await update(ref(database), {
+                    [`users/${signedInUser.uid}/friends/${friendUid}`]: null,
+                    [`users/${friendUid}/friends/${signedInUser.uid}`]: null
+                });
+                showFriendsMessage('Friend removed.', 'success');
+            } catch (error) {
+                showFriendDatabaseError(error);
+            }
+        }));
+        ui.friendList.appendChild(row);
+        try {
+            const profileSnapshot = await get(ref(database, `users/${friendUid}/profile`));
+            const profile = profileSnapshot.val() || {};
+            label.textContent = `${profile.username || 'Player'} `;
+            const id = document.createElement('code');
+            id.textContent = friendUid;
+            label.appendChild(id);
+        } catch (error) {
+            label.textContent = 'Could not load friend profile.';
+            showFriendDatabaseError(error);
+        }
+    });
+}
+
+function makeFriendEntry(uid) {
+    const row = document.createElement('li');
+    row.className = 'friend-entry';
+    const label = document.createElement('span');
+    label.textContent = 'Loading player...';
+    row.appendChild(label);
+    get(ref(database, `users/${uid}/profile`)).then(snapshot => {
+        if (!row.isConnected) return;
+        const profile = snapshot.val() || {};
+        label.textContent = `${profile.username || 'Player'} `;
+        const id = document.createElement('code');
+        id.textContent = uid;
+        label.appendChild(id);
+    }).catch(showFriendDatabaseError);
+    return row;
+}
+
+function makeFriendAction(text, action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-small';
+    button.textContent = text;
+    button.addEventListener('click', action);
+    return button;
+}
+
+function showFriendsMessage(message, type) {
+    ui.friendsStatus.textContent = message;
+    ui.friendsStatus.dataset.type = type || '';
+}
+
+function showFriendDatabaseError(error) {
+    console.error('Friend system error:', error);
+    showFriendsMessage('Friend system unavailable. Check your Firebase database setup and rules.', 'error');
 }
 
 function backToProfile() {

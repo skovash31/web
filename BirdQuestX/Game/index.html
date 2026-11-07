@@ -59,6 +59,22 @@
         <div id="your-room-code" class="room-code" hidden></div>
         <div id="connection-status" class="status" hidden></div>
 
+        <section class="friends-card" aria-labelledby="friends-title">
+            <h2 id="friends-title">Friends</h2>
+            <p class="player-id-line">Your Player ID: <code id="player-id">Sign in to load</code>
+                <button id="copy-player-id-btn" class="btn btn-small" type="button" disabled>Copy</button>
+            </p>
+            <form id="add-friend-form" class="join-row">
+                <input type="text" id="friend-player-id" placeholder="FRIEND PLAYER ID" autocomplete="off" spellcheck="false" required>
+                <button class="btn" type="submit">Add</button>
+            </form>
+            <p id="friends-status" class="friends-status" role="status" aria-live="polite"></p>
+            <h3>Friend requests</h3>
+            <ul id="friend-requests" class="friend-list"></ul>
+            <h3>Your friends</h3>
+            <ul id="friend-list" class="friend-list"></ul>
+        </section>
+
         <button id="back-to-character-btn" class="btn btn-ghost">Change Name / Bird</button>
     </section>
 
@@ -122,6 +138,6 @@
     <audio id="main-music" src="../BQX assets/music/Pixel Feathers.mp3" loop></audio>
 
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
-    <script src="game.js"></script>
+    <script type="module" src="game.js"></script>
 </body>
 </html>

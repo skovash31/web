@@ -316,6 +316,38 @@ input[type="text"]:focus {
 .status.success { background: rgba(76, 175, 80, 0.35); }
 .status.error { background: rgba(244, 67, 54, 0.35); }
 
+.friends-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px;
+    border-radius: 14px;
+    background: var(--panel-light);
+    text-align: left;
+}
+
+.friends-card h2,
+.friends-card h3 {
+    font-family: var(--pixel);
+    font-size: 0.65rem;
+    color: var(--green);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.friends-card h3 { margin-top: 6px; color: var(--muted); font-size: 0.55rem; }
+.player-id-line { overflow-wrap: anywhere; color: var(--muted); font-size: 0.85rem; }
+.player-id-line code { color: var(--gold); }
+.friends-status { min-height: 1.2em; color: var(--muted); font-size: 0.85rem; }
+.friends-status[data-type="error"] { color: #ff8a8a; }
+.friends-status[data-type="success"] { color: #9de4a0; }
+.friend-list { display: grid; gap: 8px; list-style: none; }
+.friend-list:empty::after { content: "None yet"; color: var(--muted); font-size: 0.85rem; }
+.friend-entry { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.friend-entry span { overflow-wrap: anywhere; }
+.friend-entry code { color: var(--muted); font-size: 0.75rem; }
+.friend-entry .btn { flex-shrink: 0; }
+
 /* ========== Game screen ========== */
 #game-screen {
     width: min(820px, 100%);

@@ -47,8 +47,8 @@
   <main>
     <h1>Log in</h1>
     <form id="loginForm">
-      <label>Username or email <input type="text" name="user" autocomplete="username"></label>
-      <label>Password <input type="password" name="password" autocomplete="current-password"></label>
+      <label>Email <input type="email" name="user" autocomplete="email" required></label>
+      <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
       <button class="primary" type="submit">Log in</button>
     </form>
     <p class="divider">or</p>
@@ -58,52 +58,52 @@
   </main>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
-    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged }
-      from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
-
-    const app = initializeApp({
-      apiKey: "AIzaSyB9EB8SglOnvGFt8M0MEyJKCuCOlAptZqc",
-      authDomain: "bird-quest-x.firebaseapp.com",
-      projectId: "bird-quest-x",
-      storageBucket: "bird-quest-x.firebasestorage.app",
-      messagingSenderId: "254426386448",
-      appId: "1:254426386448:web:c9cabe6d308f3461b6fa95"
-    });
-    const auth = getAuth(app);
+    import {
+      GoogleAuthProvider,
+      signInWithEmailAndPassword,
+      signInWithPopup,
+      auth,
+      database,
+      ref,
+      set
+    } from "./accounts/firebase.js";
     const accountKey = 'birdQuestXAccount';
 
-    function rememberAccount(userName) {
+    async function rememberAccount(user) {
+      const userName = user.displayName || user.email || 'Player';
+      await set(ref(database, `playerIds/${user.uid}`), user.uid);
+      await set(ref(database, `users/${user.uid}/profile`), {
+        playerId: user.uid,
+        username: userName
+      });
       localStorage.setItem(accountKey, JSON.stringify({
-        username: userName || 'Player',
+        username: userName,
+        playerId: user.uid,
+        uid: user.uid,
         loggedIn: true
       }));
     }
 
-    document.getElementById('loginForm').addEventListener('submit', (event) => {
+    const errorBox = document.getElementById('error');
+    document.getElementById('loginForm').addEventListener('submit', async (event) => {
       event.preventDefault();
-      const username = document.querySelector('#loginForm input[name="user"]').value.trim();
-      const password = document.querySelector('#loginForm input[name="password"]').value.trim();
-
-      if (!username || !password) return;
-
-      rememberAccount(username);
-      location.href = 'mainpage.html';
-    });
-
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        rememberAccount(user.displayName || user.email || 'Google User');
+      errorBox.textContent = '';
+      const email = document.querySelector('#loginForm input[name="user"]').value.trim();
+      const password = document.querySelector('#loginForm input[name="password"]').value;
+      try {
+        const credential = await signInWithEmailAndPassword(auth, email, password);
+        await rememberAccount(credential.user);
         location.href = 'mainpage.html';
+      } catch (err) {
+        errorBox.textContent = err.message.replace("Firebase: ", "");
       }
     });
 
     document.getElementById("googleBtn").addEventListener("click", async () => {
-      const errorBox = document.getElementById("error");
       errorBox.textContent = "";
       try {
-        await signInWithPopup(auth, new GoogleAuthProvider());
-        rememberAccount('Google User');
+        const credential = await signInWithPopup(auth, new GoogleAuthProvider());
+        await rememberAccount(credential.user);
         location.href = "mainpage.html";
       } catch (err) {
         errorBox.textContent = err.message.replace("Firebase: ", "");

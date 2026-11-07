@@ -61,29 +61,28 @@
   </main>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
     import {
-      getAuth,
       createUserWithEmailAndPassword,
       updateProfile,
       GoogleAuthProvider,
-      signInWithPopup
-    } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
+      signInWithPopup,
+      auth,
+      database,
+      ref,
+      set
+    } from "./accounts/firebase.js";
 
-    const app = initializeApp({
-      apiKey: "AIzaSyB9EB8SglOnvGFt8M0MEyJKCuCOlAptZqc",
-      authDomain: "bird-quest-x.firebaseapp.com",
-      projectId: "bird-quest-x",
-      storageBucket: "bird-quest-x.firebasestorage.app",
-      messagingSenderId: "254426386448",
-      appId: "1:254426386448:web:c9cabe6d308f3461b6fa95"
-    });
-    const auth = getAuth(app);
-
-    // Same storage as the login page, so the main menu and game know your name
-    function rememberAccount(userName) {
+    async function rememberAccount(user, userName) {
+      const username = userName || 'Player';
+      await set(ref(database, `playerIds/${user.uid}`), user.uid);
+      await set(ref(database, `users/${user.uid}/profile`), {
+        playerId: user.uid,
+        username
+      });
       localStorage.setItem('birdQuestXAccount', JSON.stringify({
-        username: userName || 'Player',
+        username,
+        playerId: user.uid,
+        uid: user.uid,
         loggedIn: true
       }));
     }
@@ -108,7 +107,7 @@
       try {
         const cred = await createUserWithEmailAndPassword(auth, f.email.value.trim(), f.password.value);
         await updateProfile(cred.user, { displayName: f.username.value.trim() });
-        rememberAccount(f.username.value.trim());
+        await rememberAccount(cred.user, f.username.value.trim());
         location.href = "mainpage.html";
       } catch (err) {
         showError(err.message.replace("Firebase: ", ""));
@@ -120,7 +119,7 @@
       showError("");
       try {
         const cred = await signInWithPopup(auth, new GoogleAuthProvider());
-        rememberAccount(cred.user.displayName || cred.user.email);
+        await rememberAccount(cred.user, cred.user.displayName || cred.user.email || 'Player');
         location.href = "mainpage.html";
       } catch (err) {
         showError(err.message.replace("Firebase: ", ""));

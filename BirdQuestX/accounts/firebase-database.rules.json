@@ -1,0 +1,38 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "playerIds": {
+      "$playerId": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $playerId && newData.val() === auth.uid",
+        ".validate": "newData.isString()"
+      }
+    },
+    "users": {
+      "$uid": {
+        "profile": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['playerId', 'username']) && newData.child('playerId').val() === $uid && newData.child('username').isString()"
+        },
+        "friends": {
+          ".read": "auth != null && auth.uid === $uid",
+          "$friendUid": {
+            ".write": "auth != null && ((auth.uid === $uid && (!newData.exists() || root.child('friendRequests').child($uid).child($friendUid).exists())) || (auth.uid === $friendUid && (root.child('friendRequests').child($uid).child($friendUid).exists() || root.child('users').child($uid).child('friends').child($friendUid).exists())))",
+            ".validate": "newData.val() === true"
+          }
+        }
+      }
+    },
+    "friendRequests": {
+      "$recipientUid": {
+        ".read": "auth != null && auth.uid === $recipientUid",
+        "$senderUid": {
+          ".write": "auth != null && ((auth.uid === $senderUid && $senderUid !== $recipientUid && root.child('playerIds').child($recipientUid).exists()) || (auth.uid === $recipientUid && !newData.exists()))",
+          ".validate": "newData.hasChildren(['createdAt']) && newData.child('createdAt').isNumber()"
+        }
+      }
+    }
+  }
+}
