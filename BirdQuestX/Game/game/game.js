@@ -27,7 +27,7 @@ groundImage.src = '../../BQX assets/Game Assets/ground.png';
 let canvas, ctx;
 let characterScreen, menuScreen, gameScreen;
 let peer, connection;
-let isHost = false;
+let isHost = false; 
 let roomCode = '';
 let selectedCharacter = null;
 let gameRunning = false;
