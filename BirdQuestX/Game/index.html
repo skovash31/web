@@ -1,50 +1,127 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Home</title>
-<style>
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;background:#000;font-family:system-ui,sans-serif}
-body{display:grid;place-items:center}
-
-/* 3:2 stage that scales to any screen; button is placed in % of the stage */
-.stage{
-  position:relative;
-  width:min(100vw, 150vh);
-  aspect-ratio:3/2;
-  overflow:hidden;
-  background:#fff;
-  container-type:inline-size;
-}
-.stage img.bg{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  object-fit:fill;
-}
-
-.btn{
-  position:absolute;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border-radius:8px;
-  font-weight:700;
-  text-decoration:none;
-  background:transparent;
-}
-.play{left:30%;top:64.7%;width:40%;height:9.8%;font-size:4.8cqw;color:#030303;white-space:nowrap}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BirdQuestX - Multiplayer Battle</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Username shown in the corner of every menu -->
+    <button id="user-badge" class="user-badge" type="button" title="Change your name">
+        <img src="../BQX assets/Game Assets/Birds/Chicken/Chicken Idle.png" alt="">
+        <span id="user-badge-name">Player</span>
+    </button>
 
-<main class="stage">
-  <img class="bg" src="../BQX%20assets/Menus/BirdQuestX.png" alt="">
-  <a class="btn play" href="game/game.html">Start Fight</a>
-</main>
+    <!-- 1. Profile: name + bird -->
+    <section id="profile-screen" class="screen panel">
+        <h1 class="panel-title">Choose Your Bird</h1>
 
+        <label class="field">
+            <span class="field-label">Your Name</span>
+            <input type="text" id="username-input" maxlength="16" placeholder="Enter a name" autocomplete="nickname" spellcheck="false">
+        </label>
+
+        <div class="character-grid">
+            <button type="button" class="character-card" data-character="chicken">
+                <img src="../BQX assets/Game Assets/Birds/Chicken/Chicken Idle.png" alt="">
+                <span>Chicken</span>
+            </button>
+        </div>
+
+        <button id="confirm-character-btn" class="btn btn-primary" disabled>Continue</button>
+        <a class="btn btn-ghost" href="../mainpage.html">Back to Main Menu</a>
+    </section>
+
+    <!-- 2. Lobby: find a match -->
+    <section id="menu-screen" class="screen panel" hidden>
+        <h1 class="panel-title">Multiplayer Battle</h1>
+        <p class="panel-subtitle">Best of 3 rounds</p>
+
+        <div class="menu-options">
+            <div class="option-card">
+                <h2>Random Match</h2>
+                <button id="random-match-btn" class="btn btn-primary">Find Opponent</button>
+            </div>
+            <div class="option-card">
+                <h2>Play a Friend</h2>
+                <button id="create-room-btn" class="btn">Create Room</button>
+                <div class="join-row">
+                    <input type="text" id="room-code" placeholder="CODE" maxlength="4" autocapitalize="characters" spellcheck="false">
+                    <button id="join-code-btn" class="btn">Join</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="your-room-code" class="room-code" hidden></div>
+        <div id="connection-status" class="status" hidden></div>
+
+        <button id="back-to-character-btn" class="btn btn-ghost">Change Name / Bird</button>
+    </section>
+
+    <!-- 3. Fight -->
+    <section id="game-screen" class="screen" hidden>
+        <header class="hud">
+            <div class="hud-player">
+                <span id="hud-p1-name" class="hud-name">P1</span>
+                <span id="hud-p1-pips" class="pips"></span>
+            </div>
+            <div class="hud-center">
+                <span id="hud-round">Round 1</span>
+                <span id="room-display" class="hud-room"></span>
+            </div>
+            <div class="hud-player hud-right">
+                <span id="hud-p2-pips" class="pips"></span>
+                <span id="hud-p2-name" class="hud-name">P2</span>
+            </div>
+            <button id="leave-btn" class="btn btn-small btn-danger">Leave</button>
+        </header>
+
+        <div class="canvas-wrap">
+            <canvas id="gameCanvas"></canvas>
+
+            <div id="match-over" class="overlay" hidden>
+                <div class="overlay-card">
+                    <h2 id="match-result">You Win!</h2>
+                    <p id="match-score" class="match-score"></p>
+                    <p id="rematch-status" class="rematch-status"></p>
+                    <div class="overlay-actions">
+                        <button id="rematch-btn" class="btn btn-primary">Rematch</button>
+                        <button id="new-opponent-btn" class="btn">New Opponent</button>
+                        <button id="menu-btn" class="btn btn-ghost">Main Menu</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p class="controls-hint">
+            <b>A/D</b> move · <b>W</b> jump · <b>S</b> drop down · <b>Click</b> or <b>J</b> attack · <b>Right-click</b> or <b>K</b> block · <b>L</b> music
+        </p>
+
+        <!-- Touch controls (phones/tablets only) -->
+        <div id="mobile-controls" class="touch-controls">
+            <div class="dpad">
+                <button class="control-btn" data-key="w">▲</button>
+                <div class="dpad-row">
+                    <button class="control-btn" data-key="a">◄</button>
+                    <span class="dpad-gap"></span>
+                    <button class="control-btn" data-key="d">►</button>
+                </div>
+                <button class="control-btn" data-key="s">▼</button>
+            </div>
+        </div>
+        <div id="action-controls" class="touch-controls">
+            <button id="attack-btn" class="control-btn attack-btn">⚔</button>
+            <button id="block-btn" class="control-btn block-btn">🛡</button>
+        </div>
+    </section>
+
+    <audio id="main-music" src="../BQX assets/music/Pixel Feathers.mp3" loop></audio>
+
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <script src="game.js"></script>
 </body>
 </html>

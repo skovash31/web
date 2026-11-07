@@ -80,6 +80,14 @@
     });
     const auth = getAuth(app);
 
+    // Same storage as the login page, so the main menu and game know your name
+    function rememberAccount(userName) {
+      localStorage.setItem('birdQuestXAccount', JSON.stringify({
+        username: userName || 'Player',
+        loggedIn: true
+      }));
+    }
+
     const form = document.getElementById("signupForm");
     const errorBox = document.getElementById("error");
     const googleBtn = document.getElementById("googleBtn");
@@ -100,6 +108,7 @@
       try {
         const cred = await createUserWithEmailAndPassword(auth, f.email.value.trim(), f.password.value);
         await updateProfile(cred.user, { displayName: f.username.value.trim() });
+        rememberAccount(f.username.value.trim());
         location.href = "mainpage.html";
       } catch (err) {
         showError(err.message.replace("Firebase: ", ""));
@@ -110,7 +119,8 @@
     googleBtn.addEventListener("click", async () => {
       showError("");
       try {
-        await signInWithPopup(auth, new GoogleAuthProvider());
+        const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+        rememberAccount(cred.user.displayName || cred.user.email);
         location.href = "mainpage.html";
       } catch (err) {
         showError(err.message.replace("Firebase: ", ""));

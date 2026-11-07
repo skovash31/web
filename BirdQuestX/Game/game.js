@@ -1,17 +1,22 @@
-// Game configuration
+'use strict';
+
+/* =====================================================================
+   Config
+   ===================================================================== */
+
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 const PLAYER_SIZE = 50;
 const MOVE_SPEED = 5;
 
-// Physics configuration
+// Physics
 const GRAVITY = 0.6;
 const JUMP_FORCE = 13;
 const MAX_FALL_SPEED = 15;
 const GROUND_TOP_CROP = 75; // ground.png is 100x100 and the grass starts ~75px down (top is transparent)
 
-// Level: everything here is drawn with ground.png and is solid to stand on.
-// The floor spans the whole width; the floating ones can be jumped up through
+// Level: everything here is drawn with ground.png and can be stood on.
+// The floor spans the whole width; floating ones can be jumped up through
 // from below and dropped through by holding S.
 const PLATFORMS = [
     { x: 0,   y: 540, w: 800, h: 60, floor: true },
@@ -21,10 +26,8 @@ const PLATFORMS = [
 ];
 const FLOOR_Y = PLATFORMS[0].y;
 const SPAWN = { p1: 100, p2: 650 };
-const KO_RESET_DELAY = 3000;
-const JOIN_TIMEOUT = 6000;
 
-// Combat configuration
+// Combat
 const ATTACK_RANGE = 65;
 const ATTACK_DAMAGE = 12;
 const ATTACK_DURATION = 200;   // ms the attack pose/hitbox stays active
@@ -32,162 +35,233 @@ const ATTACK_COOLDOWN = 450;   // ms before you can attack again
 const BLOCK_DAMAGE_MULTIPLIER = 0.25;
 const MAX_HEALTH = 100;
 
-// Room code configuration
+// Match: best of 3 rounds
+const ROUNDS_TO_WIN = 2;
+const ROUND_INTRO_TIME = 1500;  // "Round 2 ... Fight!" freeze
+const ROUND_END_DELAY = 2500;   // K.O. screen before next round
+const MATCH_OVER_DELAY = 1200;  // K.O. screen before the results popup
+
+// Networking
 const ROOM_CODE_LENGTH = 4;
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I, avoids mix-ups
 const ROOM_ID_PREFIX = 'bqx-';
 const PUBLIC_ROOM_PREFIX = 'bqx-public-';
 const PUBLIC_ROOM_SLOTS = 10;
+const JOIN_TIMEOUT = 6000;
 
-// Game state
+// Profile (shared with ../mainpage.html)
+const ACCOUNT_KEY = 'birdQuestXAccount';
+const NAME_KEY = 'birdQuestXName';
+const NAME_MAX = 16;
+
+const ASSETS = '../BQX assets/';
+
+/* =====================================================================
+   State
+   ===================================================================== */
+
+const ui = {};
 let canvas, ctx;
-let characterScreen, menuScreen, gameScreen;
-let peer, connection;
+
+let peer = null;
+let connection = null;
 let isHost = false;
 let roomCode = '';
-let selectedCharacter = null;
-let opponentCharacter = null;
-let mainMusic;
 let randomMatchActive = false;
 let randomMatchSlot = 1;
 let joinTimer = null;
-let loopRunning = false;
-let koTime = 0;
 
-// Sprite images
-let sprites = {
-    chicken: null
+let myName = 'Player';
+let selectedCharacter = null;
+let opponentName = 'Opponent';
+
+let loopRunning = false;
+
+// phase: 'idle' (not playing) | 'intro' | 'fight' | 'roundOver' | 'matchOver'
+const match = {
+    phase: 'idle',
+    phaseTime: 0,
+    round: 1,
+    score: { p1: 0, p2: 0 },
+    roundWinner: null,
+    rematchMe: false,
+    rematchThem: false,
+    opponentLeft: false
 };
+
+const sprites = {};
 let groundImage = null;
 
-// Player data
-let player1 = {
-    x: SPAWN.p1,
-    y: FLOOR_Y - PLAYER_SIZE,
-    vx: 0,
-    vy: 0,
-    onGround: true,
-    character: 'chicken',
-    facing: 1,
-    health: MAX_HEALTH,
-    blocking: false,
-    attacking: false,
-    attackEndTime: 0,
-    attackReadyTime: 0,
-    hasHitThisSwing: false,
-    keys: { w: false, a: false, s: false, d: false }
-};
+function makePlayer(x, facing) {
+    return {
+        x,
+        y: FLOOR_Y - PLAYER_SIZE,
+        vx: 0,
+        vy: 0,
+        onGround: true,
+        character: 'chicken',
+        facing,
+        health: MAX_HEALTH,
+        blocking: false,
+        attacking: false,
+        attackEndTime: 0,
+        attackReadyTime: 0,
+        hasHitThisSwing: false,
+        keys: { w: false, a: false, s: false, d: false }
+    };
+}
 
-let player2 = {
-    x: SPAWN.p2,
-    y: FLOOR_Y - PLAYER_SIZE,
-    vx: 0,
-    vy: 0,
-    onGround: true,
-    character: 'chicken',
-    facing: -1,
-    health: MAX_HEALTH,
-    blocking: false,
-    attacking: false,
-    attackEndTime: 0,
-    attackReadyTime: 0,
-    hasHitThisSwing: false,
-    keys: { w: false, a: false, s: false, d: false }
-};
+const player1 = makePlayer(SPAWN.p1, 1);
+const player2 = makePlayer(SPAWN.p2, -1);
 
-// Initialize when page loads
+const me = () => (isHost ? player1 : player2);
+const them = () => (isHost ? player2 : player1);
+const nameOf = (key) => ((key === 'p1') === isHost ? myName : opponentName);
+const myKey = () => (isHost ? 'p1' : 'p2');
+
+/* =====================================================================
+   Setup
+   ===================================================================== */
+
 window.addEventListener('load', init);
 
 function init() {
-    // Get DOM elements
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
     canvas.width = CANVAS_WIDTH;
     canvas.height = CANVAS_HEIGHT;
 
-    characterScreen = document.getElementById('character-screen');
-    menuScreen = document.getElementById('menu-screen');
-    gameScreen = document.getElementById('game-screen');
-    mainMusic = document.getElementById('main-music');
+    [
+        'profile-screen', 'menu-screen', 'game-screen',
+        'user-badge', 'user-badge-name', 'username-input', 'confirm-character-btn',
+        'connection-status', 'your-room-code', 'room-code', 'room-display',
+        'hud-p1-name', 'hud-p2-name', 'hud-p1-pips', 'hud-p2-pips', 'hud-round',
+        'match-over', 'match-result', 'match-score', 'rematch-status',
+        'rematch-btn', 'new-opponent-btn', 'menu-btn', 'main-music'
+    ].forEach(id => {
+        ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
+    });
 
-    // Load sprites
-    loadSprites();
+    sprites.chicken = loadImage('Game Assets/Birds/Chicken/Chicken Idle.png');
+    groundImage = loadImage('Game Assets/ground.png');
 
-    // Setup character selection
-    setupCharacterSelection();
+    setupProfile();
 
-    // Setup menu buttons
+    document.getElementById('random-match-btn').addEventListener('click', randomMatch);
     document.getElementById('create-room-btn').addEventListener('click', createRoom);
     document.getElementById('join-code-btn').addEventListener('click', joinRoom);
-    document.getElementById('random-match-btn').addEventListener('click', randomMatch);
+    ui.roomCode.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+    document.getElementById('back-to-character-btn').addEventListener('click', backToProfile);
     document.getElementById('leave-btn').addEventListener('click', leaveGame);
-    document.getElementById('back-to-character-btn').addEventListener('click', backToCharacterSelect);
 
-    // Setup keyboard controls
+    ui.rematchBtn.addEventListener('click', requestRematch);
+    ui.newOpponentBtn.addEventListener('click', findNewOpponent);
+    ui.menuBtn.addEventListener('click', leaveGame);
+
     setupControls();
-
-    // Setup mouse controls (left click attack, right click block)
-    setupCombatControls();
-
-    // Setup mobile controls
-    setupMobileControls();
-    setupCombatMobileControls();
-
-    // Music toggle with L key
-    document.addEventListener('keydown', (e) => {
-        if (e.key.toLowerCase() === 'l') {
-            if (mainMusic.paused) {
-                mainMusic.play().catch(err => console.log('Music play failed:', err));
-            } else {
-                mainMusic.pause();
-            }
-        }
-    });
+    setupMouseCombat();
+    setupTouchControls();
 }
 
-function loadSprites() {
-    sprites.chicken = new Image();
-    sprites.chicken.src = '../../BQX assets/Game Assets/Birds/Chicken/Chicken Idle.png';
-    groundImage = new Image();
-    groundImage.src = '../../BQX assets/Game Assets/ground.png';
+function loadImage(path) {
+    const img = new Image();
+    img.src = ASSETS + path;
+    return img;
 }
 
-function setupCharacterSelection() {
-    const characterCards = document.querySelectorAll('.character-card');
-    const confirmBtn = document.getElementById('confirm-character-btn');
+function showScreen(name) {
+    ui.profileScreen.hidden = name !== 'profile';
+    ui.menuScreen.hidden = name !== 'menu';
+    ui.gameScreen.hidden = name !== 'game';
+    ui.userBadge.hidden = name === 'game';
+}
 
-    characterCards.forEach(card => {
+/* =====================================================================
+   Profile: username + bird
+   ===================================================================== */
+
+function cleanName(name) {
+    let n = String(name || '');
+    if (n.includes('@')) n = n.split('@')[0]; // don't show full emails
+    return n.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
+}
+
+function loadName() {
+    try {
+        const saved = cleanName(localStorage.getItem(NAME_KEY));
+        if (saved) return saved;
+        const account = JSON.parse(localStorage.getItem(ACCOUNT_KEY));
+        const fromAccount = cleanName(account && account.username);
+        if (fromAccount) return fromAccount;
+    } catch (e) { /* ignore bad storage */ }
+    return 'Player';
+}
+
+function saveName(name) {
+    try { localStorage.setItem(NAME_KEY, name); } catch (e) { /* storage blocked */ }
+}
+
+function setupProfile() {
+    myName = loadName();
+    ui.usernameInput.value = myName;
+    ui.userBadgeName.textContent = myName;
+
+    const cards = document.querySelectorAll('.character-card');
+    const updateConfirm = () => {
+        ui.confirmCharacterBtn.disabled = !selectedCharacter || !cleanName(ui.usernameInput.value);
+    };
+
+    cards.forEach(card => {
         card.addEventListener('click', () => {
-            // Remove previous selection
-            characterCards.forEach(c => c.classList.remove('selected'));
-            // Add selection to clicked card
+            cards.forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
-            selectedCharacter = card.getAttribute('data-character');
-            confirmBtn.disabled = false;
+            selectedCharacter = card.dataset.character;
+            updateConfirm();
         });
     });
 
-    confirmBtn.addEventListener('click', () => {
-        if (selectedCharacter) {
-            characterScreen.style.display = 'none';
-            menuScreen.style.display = 'block';
-            // Try to start music
-            mainMusic.play().catch(err => console.log('Music play failed:', err));
-        }
+    // Only one bird right now, so pick it for the player
+    if (cards.length === 1) cards[0].click();
+
+    ui.usernameInput.addEventListener('input', () => {
+        const name = cleanName(ui.usernameInput.value);
+        if (name) ui.userBadgeName.textContent = name;
+        updateConfirm();
     });
+    ui.usernameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !ui.confirmCharacterBtn.disabled) ui.confirmCharacterBtn.click();
+    });
+
+    ui.confirmCharacterBtn.addEventListener('click', () => {
+        myName = cleanName(ui.usernameInput.value) || 'Player';
+        ui.usernameInput.value = myName;
+        ui.userBadgeName.textContent = myName;
+        saveName(myName);
+        showScreen('menu');
+        ui.mainMusic.play().catch(() => {});
+    });
+
+    ui.userBadge.addEventListener('click', () => {
+        if (!ui.gameScreen.hidden) return;
+        backToProfile();
+        ui.usernameInput.focus();
+        ui.usernameInput.select();
+    });
+
+    updateConfirm();
 }
 
-function backToCharacterSelect() {
+function backToProfile() {
     randomMatchActive = false;
     closeNetwork();
-    menuScreen.style.display = 'none';
-    characterScreen.style.display = 'block';
-    document.getElementById('your-room-code').innerHTML = '';
-    document.getElementById('room-code').value = '';
-    showStatus('', '');
+    resetLobbyUi();
+    showScreen('profile');
 }
 
-// Generates a short, easy-to-read room code (e.g. "K7QX")
+/* =====================================================================
+   Networking
+   ===================================================================== */
+
 function generateRoomCode() {
     let code = '';
     for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
@@ -204,24 +278,28 @@ function createRoom() {
     const code = generateRoomCode();
     showStatus('Creating room...', 'info');
 
-    peer = new Peer(ROOM_ID_PREFIX + code);
+    const currentPeer = new Peer(ROOM_ID_PREFIX + code);
+    peer = currentPeer;
 
-    peer.on('open', () => {
+    currentPeer.on('open', () => {
+        if (peer !== currentPeer) return;
         roomCode = code;
-        document.getElementById('your-room-code').innerHTML =
-            `Your Room Code: <strong>${code}</strong><br>Share this code with your friend!`;
+        ui.yourRoomCode.hidden = false;
+        ui.yourRoomCode.innerHTML = 'Share this code with your friend:<strong></strong>';
+        ui.yourRoomCode.querySelector('strong').textContent = code;
         showStatus('Waiting for player to join...', 'info');
     });
 
-    peer.on('connection', (conn) => {
+    currentPeer.on('connection', (conn) => {
+        if (peer !== currentPeer) return conn.close();
+        if (connection) return rejectBusy(conn);
         handleConnection(conn);
     });
 
-    peer.on('error', (err) => {
-        console.error('Peer error:', err);
+    currentPeer.on('error', (err) => {
+        if (peer !== currentPeer) return;
         if (err.type === 'unavailable-id') {
-            // Room code collision - just try again with a fresh code
-            createRoom();
+            createRoom(); // room code collision - try a fresh one
         } else {
             showStatus('Connection error: ' + err.type, 'error');
         }
@@ -229,8 +307,7 @@ function createRoom() {
 }
 
 function joinRoom() {
-    const code = document.getElementById('room-code').value.trim().toUpperCase();
-
+    const code = ui.roomCode.value.trim().toUpperCase();
     if (!code) {
         showStatus('Please enter a room code', 'error');
         return;
@@ -240,33 +317,33 @@ function joinRoom() {
     closeNetwork();
     isHost = false;
     roomCode = code;
-
+    ui.yourRoomCode.hidden = true;
     showStatus('Connecting to room...', 'info');
 
-    peer = new Peer();
+    const currentPeer = new Peer();
+    peer = currentPeer;
 
-    peer.on('open', () => {
-        connection = peer.connect(ROOM_ID_PREFIX + code);
-        handleConnection(connection);
+    currentPeer.on('open', () => {
+        if (peer !== currentPeer) return;
+        handleConnection(currentPeer.connect(ROOM_ID_PREFIX + code, { reliable: true }));
     });
 
-    peer.on('error', (err) => {
-        console.error('Peer error:', err);
-        if (err.type === 'peer-unavailable') {
-            showStatus('Room not found. Check the code and try again.', 'error');
-        } else {
-            showStatus('Connection error: ' + err.type, 'error');
-        }
+    currentPeer.on('error', (err) => {
+        if (peer !== currentPeer) return;
+        showStatus(err.type === 'peer-unavailable'
+            ? 'Room not found. Check the code and try again.'
+            : 'Connection error: ' + err.type, 'error');
     });
 }
 
+// Random match: try to hold public slot 1..N as the waiting host.
+// If a slot is already held, connect to whoever holds it instead.
 function randomMatch() {
     closeNetwork();
     randomMatchActive = true;
-    randomMatchSlot = 1;
-    document.getElementById('your-room-code').innerHTML = '';
+    ui.yourRoomCode.hidden = true;
     showStatus('Searching for a random player...', 'info');
-    claimRandomRoom(randomMatchSlot);
+    claimRandomRoom(1);
 }
 
 function claimRandomRoom(slot) {
@@ -290,18 +367,8 @@ function claimRandomRoom(slot) {
     });
 
     currentPeer.on('connection', (conn) => {
-        if (peer !== currentPeer) {
-            conn.close();
-            return;
-        }
-        if (connection || !randomMatchActive) {
-            conn.on('open', () => {
-                conn.send({ type: 'busy' });
-                setTimeout(() => conn.close(), 500);
-            });
-            return;
-        }
-
+        if (peer !== currentPeer) return conn.close();
+        if (connection || !randomMatchActive) return rejectBusy(conn);
         isHost = true;
         roomCode = 'PUBLIC';
         handleConnection(conn);
@@ -331,15 +398,8 @@ function joinRandomRoom(slot) {
         if (peer !== currentPeer || !randomMatchActive) return;
         const conn = currentPeer.connect(PUBLIC_ROOM_PREFIX + slot, { reliable: true });
         handleConnection(conn);
-        conn.on('open', () => clearJoinTimer());
+        conn.on('open', clearJoinTimer);
     });
-
-    // If the player holding this slot never answers (stale slot, or they are
-    // already in a match), move on instead of hanging forever.
-    clearJoinTimer();
-    joinTimer = setTimeout(() => {
-        if (peer === currentPeer && randomMatchActive) tryNextRandomRoom(slot);
-    }, JOIN_TIMEOUT);
 
     currentPeer.on('error', (err) => {
         if (peer !== currentPeer || !randomMatchActive) return;
@@ -350,6 +410,20 @@ function joinRandomRoom(slot) {
             showStatus('Random match connection error: ' + err.type, 'error');
         }
     });
+
+    // If whoever holds this slot never answers, move on instead of hanging
+    clearJoinTimer();
+    joinTimer = setTimeout(() => {
+        if (peer === currentPeer && randomMatchActive) tryNextRandomRoom(slot);
+    }, JOIN_TIMEOUT);
+}
+
+function tryNextRandomRoom(slot) {
+    clearJoinTimer();
+    if (!randomMatchActive) return;
+    showStatus('Searching for another random player...', 'info');
+    closeNetwork();
+    claimRandomRoom(slot + 1);
 }
 
 function clearJoinTimer() {
@@ -357,13 +431,12 @@ function clearJoinTimer() {
     joinTimer = null;
 }
 
-function tryNextRandomRoom(slot) {
-    clearJoinTimer();
-    if (!randomMatchActive) return;
-    randomMatchSlot = slot + 1;
-    showStatus('Searching for another random player...', 'info');
-    closeNetwork();
-    claimRandomRoom(randomMatchSlot);
+// Tell someone we're already in a match so they search elsewhere
+function rejectBusy(conn) {
+    conn.on('open', () => {
+        conn.send({ type: 'busy' });
+        setTimeout(() => conn.close(), 500);
+    });
 }
 
 function closeNetwork() {
@@ -372,264 +445,373 @@ function closeNetwork() {
     const oldPeer = peer;
     connection = null;
     peer = null;
-
     if (oldConnection) oldConnection.close();
     if (oldPeer) oldPeer.destroy();
+}
+
+function send(msg) {
+    if (connection && connection.open) connection.send(msg);
 }
 
 function handleConnection(conn) {
     connection = conn;
 
-    connection.on('open', () => {
+    conn.on('open', () => {
         if (connection !== conn) return;
-        showStatus('Connected! Exchanging character info...', 'success');
-        document.getElementById('room-display').textContent = `Room: ${roomCode}`;
-
-        // Send character selection
-        connection.send({
-            type: 'character',
-            character: selectedCharacter
-        });
+        showStatus('Connected! Getting ready...', 'success');
+        conn.send({ type: 'hello', name: myName, character: selectedCharacter || 'chicken' });
     });
 
-    connection.on('data', (data) => {
-        if (data.type === 'busy' && randomMatchActive) {
-            tryNextRandomRoom(randomMatchSlot);
+    conn.on('data', (data) => {
+        if (connection !== conn || !data || typeof data !== 'object') return;
+        if (data.type === 'busy') {
+            if (randomMatchActive) tryNextRandomRoom(randomMatchSlot);
+            else showStatus('That room is already in a match.', 'error');
             return;
         }
         handleNetworkData(data);
     });
 
-    connection.on('close', () => {
+    conn.on('close', () => {
         if (connection !== conn) return;
         connection = null;
-        if (randomMatchActive) {
-            if (isHost) {
-                showStatus('Waiting for a random player...', 'info');
-            } else {
-                tryNextRandomRoom(randomMatchSlot);
-            }
-            return;
-        }
-        showStatus('Player disconnected', 'error');
-        setTimeout(leaveGame, 2000);
+        onOpponentDisconnected();
     });
 
-    connection.on('error', (err) => {
+    conn.on('error', (err) => {
         console.error('Connection error:', err);
-        showStatus('Connection failed', 'error');
+        if (connection === conn && match.phase === 'idle') showStatus('Connection failed', 'error');
     });
+}
+
+function onOpponentDisconnected() {
+    if (match.phase !== 'idle') {
+        // Mid-match or on the results screen: show results with rematch disabled
+        match.opponentLeft = true;
+        if (match.phase !== 'matchOver') {
+            match.phase = 'matchOver';
+            match.phaseTime = performance.now();
+        }
+        showMatchOver();
+        return;
+    }
+    if (randomMatchActive) {
+        if (isHost) showStatus('Waiting for a random player...', 'info');
+        else tryNextRandomRoom(randomMatchSlot);
+        return;
+    }
+    showStatus('Player disconnected', 'error');
 }
 
 function handleNetworkData(data) {
-    if (data.type === 'position') {
-        // Update opponent's synced state
-        const opponent = isHost ? player2 : player1;
-        opponent.x = data.x;
-        opponent.y = data.y;
-        opponent.facing = data.facing;
-        opponent.attacking = data.attacking;
-        opponent.blocking = data.blocking;
-        opponent.health = data.health;
-    } else if (data.type === 'hit') {
-        // Opponent's attack landed on us - we're authoritative over our own health
-        const myPlayer = isHost ? player1 : player2;
-        if (koTime || myPlayer.health <= 0) return;
-        const damage = myPlayer.blocking
-            ? Math.round(data.damage * BLOCK_DAMAGE_MULTIPLIER)
-            : data.damage;
-        myPlayer.health = Math.max(0, myPlayer.health - damage);
-    } else if (data.type === 'character') {
-        // Receive opponent's character
-        opponentCharacter = data.character;
-        showStatus('Starting game...', 'success');
+    const opponent = them();
 
-        // Set characters
-        if (isHost) {
-            player1.character = selectedCharacter;
-            player2.character = opponentCharacter;
-        } else {
-            player2.character = selectedCharacter;
-            player1.character = opponentCharacter;
+    switch (data.type) {
+        case 'hello': {
+            opponentName = cleanName(data.name) || 'Opponent';
+            opponent.character = sprites[data.character] ? data.character : 'chicken';
+            me().character = selectedCharacter || 'chicken';
+            if (match.phase === 'idle') {
+                showStatus(`Matched with ${opponentName}!`, 'success');
+                const conn = connection;
+                setTimeout(() => {
+                    if (connection === conn && conn && conn.open && match.phase === 'idle') startMatch();
+                }, 800);
+            }
+            break;
         }
 
-        const conn = connection;
-        setTimeout(() => {
-            if (connection === conn && conn && conn.open) startGame();
-        }, 1000);
+        case 'state':
+            opponent.x = data.x;
+            opponent.y = data.y;
+            opponent.vx = data.vx || 0;
+            opponent.facing = data.facing === -1 ? -1 : 1;
+            opponent.attacking = !!data.attacking;
+            opponent.blocking = !!data.blocking;
+            // Ignore health left over from the previous round
+            if (data.round === match.round) opponent.health = data.health;
+            break;
+
+        case 'hit': {
+            if (data.round !== match.round || match.phase !== 'fight') return;
+            const mine = me();
+            if (mine.health <= 0) return;
+            const damage = mine.blocking ? Math.round(data.damage * BLOCK_DAMAGE_MULTIPLIER) : data.damage;
+            mine.health = Math.max(0, mine.health - damage);
+            break;
+        }
+
+        // The host referees rounds so both screens always agree
+        case 'roundEnd':
+            if (!isHost) applyRoundEnd(data);
+            break;
+        case 'roundStart':
+            if (!isHost) startRound(data.round);
+            break;
+
+        case 'rematch':
+            match.rematchThem = true;
+            updateRematchUi();
+            maybeStartRematch();
+            break;
+        case 'matchStart':
+            if (!isHost) startMatch();
+            break;
     }
 }
 
-function startGame() {
-    // Matched with a random player: free the public slot on the server so other
-    // people can use it. disconnect() keeps our existing connection alive.
+/* =====================================================================
+   Match flow: best of 3, rematch, new opponent
+   ===================================================================== */
+
+function startMatch() {
+    // Matched with a random player: free the public slot so others can use it.
+    // disconnect() keeps the connection we already have.
     if (randomMatchActive && isHost && peer) peer.disconnect();
     randomMatchActive = false;
     clearJoinTimer();
-    menuScreen.style.display = 'none';
-    gameScreen.style.display = 'flex';
 
-    resetRound();
+    match.score = { p1: 0, p2: 0 };
+    match.rematchMe = false;
+    match.rematchThem = false;
+    match.opponentLeft = false;
+    ui.matchOver.hidden = true;
+
+    ui.roomDisplay.textContent = roomCode === 'PUBLIC' ? 'Random match' : `Room ${roomCode}`;
+    showScreen('game');
+    startRound(1);
 
     if (!loopRunning) {
         loopRunning = true;
-        gameLoop();
+        requestAnimationFrame(gameLoop);
     }
 }
 
 function resetPlayer(player, x, facing) {
-    player.x = x;
-    player.y = FLOOR_Y - PLAYER_SIZE;
-    player.vx = 0;
-    player.vy = 0;
-    player.onGround = true;
-    player.facing = facing;
-    player.health = MAX_HEALTH;
-    player.blocking = false;
-    player.attacking = false;
-    player.attackReadyTime = 0;
-    player.hasHitThisSwing = false;
+    const character = player.character;
+    const keys = player.keys;
+    Object.assign(player, makePlayer(x, facing), { character, keys });
 }
 
-function resetRound() {
-    koTime = 0;
+function startRound(round) {
+    match.round = round;
+    match.phase = 'intro';
+    match.phaseTime = performance.now();
+    match.roundWinner = null;
     resetPlayer(player1, SPAWN.p1, 1);
     resetPlayer(player2, SPAWN.p2, -1);
+    updateHud();
 }
 
-function setupControls() {
-    window.addEventListener('keydown', (e) => {
-        const key = e.key.toLowerCase();
-        const myPlayer = isHost ? player1 : player2;
+// Host only: check for a K.O. and tell the guest what happened
+function hostCheckRoundOver() {
+    if (player1.health > 0 && player2.health > 0) return;
+    const winner = player1.health <= 0 ? 'p2' : 'p1';
+    const score = { ...match.score, [winner]: match.score[winner] + 1 };
+    const msg = {
+        type: 'roundEnd',
+        round: match.round,
+        winner,
+        score,
+        matchOver: score[winner] >= ROUNDS_TO_WIN
+    };
+    send(msg);
+    applyRoundEnd(msg);
+}
 
-        if (key === 'w') myPlayer.keys.w = true;
-        if (key === 'a') myPlayer.keys.a = true;
-        if (key === 's') myPlayer.keys.s = true;
-        if (key === 'd') myPlayer.keys.d = true;
+function applyRoundEnd(msg) {
+    if (msg.round !== match.round || (match.phase !== 'fight' && match.phase !== 'intro')) return;
+    match.score = { p1: msg.score.p1 | 0, p2: msg.score.p2 | 0 };
+    match.roundWinner = msg.winner;
+    match.phase = msg.matchOver ? 'matchOver' : 'roundOver';
+    match.phaseTime = performance.now();
+    updateHud();
+
+    if (msg.matchOver) {
+        setTimeout(() => {
+            if (match.phase === 'matchOver') showMatchOver();
+        }, MATCH_OVER_DELAY);
+    }
+}
+
+function showMatchOver() {
+    const { p1, p2 } = match.score;
+    const myScore = isHost ? p1 : p2;
+    const theirScore = isHost ? p2 : p1;
+    const finished = myScore >= ROUNDS_TO_WIN || theirScore >= ROUNDS_TO_WIN;
+
+    let title;
+    if (finished) title = myScore > theirScore ? 'You Win!' : 'You Lose!';
+    else title = 'Opponent Left';
+
+    ui.matchResult.textContent = title;
+    ui.matchResult.classList.toggle('lose', finished && myScore < theirScore);
+    ui.matchScore.textContent = `${myName} ${myScore} - ${theirScore} ${opponentName}`;
+    updateRematchUi();
+    ui.matchOver.hidden = false;
+}
+
+function updateRematchUi() {
+    let text = '';
+    if (match.opponentLeft) text = `${opponentName} left the game.`;
+    else if (match.rematchMe) text = `Waiting for ${opponentName}...`;
+    else if (match.rematchThem) text = `${opponentName} wants a rematch!`;
+    ui.rematchStatus.textContent = text;
+    ui.rematchBtn.disabled = match.opponentLeft || match.rematchMe;
+}
+
+function requestRematch() {
+    if (match.opponentLeft || match.rematchMe) return;
+    match.rematchMe = true;
+    send({ type: 'rematch' });
+    updateRematchUi();
+    maybeStartRematch();
+}
+
+// Host starts the rematch once both players asked for it
+function maybeStartRematch() {
+    if (isHost && match.rematchMe && match.rematchThem && !match.opponentLeft) {
+        send({ type: 'matchStart' });
+        startMatch();
+    }
+}
+
+function findNewOpponent() {
+    stopMatch();
+    closeNetwork();
+    showScreen('menu');
+    randomMatch();
+}
+
+function leaveGame() {
+    stopMatch();
+    randomMatchActive = false;
+    closeNetwork();
+    resetLobbyUi();
+    showScreen('menu');
+}
+
+function stopMatch() {
+    match.phase = 'idle';
+    ui.matchOver.hidden = true;
+    isHost = false;
+    roomCode = '';
+    [player1, player2].forEach(p => Object.keys(p.keys).forEach(k => { p.keys[k] = false; }));
+}
+
+function resetLobbyUi() {
+    ui.yourRoomCode.hidden = true;
+    ui.yourRoomCode.textContent = '';
+    ui.roomCode.value = '';
+    showStatus('', '');
+}
+
+function updateHud() {
+    const p1Name = nameOf('p1');
+    const p2Name = nameOf('p2');
+    ui.hudP1Name.textContent = p1Name;
+    ui.hudP2Name.textContent = p2Name;
+    ui.hudP1Name.classList.toggle('me', isHost);
+    ui.hudP2Name.classList.toggle('me', !isHost);
+    ui.hudRound.textContent = `Round ${match.round}`;
+    renderPips(ui.hudP1Pips, match.score.p1);
+    renderPips(ui.hudP2Pips, match.score.p2);
+}
+
+function renderPips(el, wins) {
+    el.innerHTML = '';
+    for (let i = 0; i < ROUNDS_TO_WIN; i++) {
+        const pip = document.createElement('span');
+        pip.className = 'pip' + (i < wins ? ' won' : '');
+        el.appendChild(pip);
+    }
+}
+
+/* =====================================================================
+   Controls
+   ===================================================================== */
+
+const isTyping = (e) => e.target instanceof HTMLInputElement;
+
+function setupControls() {
+    const moveKeys = { w: 'w', a: 'a', s: 's', d: 'd' };
+
+    window.addEventListener('keydown', (e) => {
+        if (isTyping(e)) return;
+        const key = e.key.toLowerCase();
+
+        if (key === 'l' && !e.repeat) {
+            if (ui.mainMusic.paused) ui.mainMusic.play().catch(() => {});
+            else ui.mainMusic.pause();
+            return;
+        }
+
+        if (match.phase === 'idle') return;
+        if (moveKeys[key]) me().keys[key] = true;
+        if (key === 'j' && !e.repeat) tryAttack(me());
+        if (key === 'k') me().blocking = true;
     });
 
     window.addEventListener('keyup', (e) => {
         const key = e.key.toLowerCase();
-        const myPlayer = isHost ? player1 : player2;
+        if (moveKeys[key]) me().keys[key] = false;
+        if (key === 'k') me().blocking = false;
+    });
 
-        if (key === 'w') myPlayer.keys.w = false;
-        if (key === 'a') myPlayer.keys.a = false;
-        if (key === 's') myPlayer.keys.s = false;
-        if (key === 'd') myPlayer.keys.d = false;
+    // Don't get stuck walking if the window loses focus
+    window.addEventListener('blur', () => {
+        const p = me();
+        Object.keys(p.keys).forEach(k => { p.keys[k] = false; });
+        p.blocking = false;
     });
 }
 
 // Left click = attack, right click (held) = block
-function setupCombatControls() {
-    // Don't let the browser's right-click menu pop up over the game
+function setupMouseCombat() {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
     canvas.addEventListener('mousedown', (e) => {
-        const myPlayer = isHost ? player1 : player2;
-
-        if (e.button === 0) {
-            tryAttack(myPlayer);
-        } else if (e.button === 2) {
-            myPlayer.blocking = true;
-        }
+        if (e.button === 0) tryAttack(me());
+        else if (e.button === 2) me().blocking = true;
     });
 
     window.addEventListener('mouseup', (e) => {
-        const myPlayer = isHost ? player1 : player2;
-
-        if (e.button === 2) {
-            myPlayer.blocking = false;
-        }
-    });
-
-    // If the mouse leaves the window while holding right click, stop blocking
-    window.addEventListener('mouseleave', () => {
-        const myPlayer = isHost ? player1 : player2;
-        myPlayer.blocking = false;
+        if (e.button === 2) me().blocking = false;
     });
 }
 
-function setupMobileControls() {
-    const buttons = document.querySelectorAll('.control-btn[data-key]');
+function setupTouchControls() {
+    const bindHold = (button, onDown, onUp) => {
+        const down = (e) => { e.preventDefault(); button.classList.add('pressed'); onDown(); };
+        const up = (e) => { e.preventDefault(); button.classList.remove('pressed'); onUp(); };
+        button.addEventListener('touchstart', down, { passive: false });
+        button.addEventListener('touchend', up, { passive: false });
+        button.addEventListener('touchcancel', up, { passive: false });
+        button.addEventListener('mousedown', down);
+        button.addEventListener('mouseup', up);
+        button.addEventListener('mouseleave', up);
+        button.addEventListener('contextmenu', (e) => e.preventDefault());
+    };
 
-    buttons.forEach(button => {
-        const key = button.getAttribute('data-key');
-
-        // Touch start - key down
-        button.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const myPlayer = isHost ? player1 : player2;
-            myPlayer.keys[key] = true;
-        });
-
-        // Touch end - key up
-        button.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            const myPlayer = isHost ? player1 : player2;
-            myPlayer.keys[key] = false;
-        });
-
-        // Touch cancel - key up
-        button.addEventListener('touchcancel', (e) => {
-            e.preventDefault();
-            const myPlayer = isHost ? player1 : player2;
-            myPlayer.keys[key] = false;
-        });
-
-        // Also support mouse for testing
-        button.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            const myPlayer = isHost ? player1 : player2;
-            myPlayer.keys[key] = true;
-        });
-
-        button.addEventListener('mouseup', (e) => {
-            e.preventDefault();
-            const myPlayer = isHost ? player1 : player2;
-            myPlayer.keys[key] = false;
-        });
-
-        button.addEventListener('mouseleave', (e) => {
-            const myPlayer = isHost ? player1 : player2;
-            myPlayer.keys[key] = false;
-        });
+    document.querySelectorAll('.control-btn[data-key]').forEach(button => {
+        const key = button.dataset.key;
+        bindHold(button, () => { me().keys[key] = true; }, () => { me().keys[key] = false; });
     });
+
+    bindHold(document.getElementById('attack-btn'), () => tryAttack(me()), () => {});
+    bindHold(document.getElementById('block-btn'),
+        () => { me().blocking = true; },
+        () => { me().blocking = false; });
 }
 
-// Mobile equivalents of left-click attack / right-click block
-function setupCombatMobileControls() {
-    const attackBtn = document.getElementById('attack-btn');
-    const blockBtn = document.getElementById('block-btn');
-
-    if (attackBtn) {
-        const doAttack = (e) => {
-            e.preventDefault();
-            const myPlayer = isHost ? player1 : player2;
-            tryAttack(myPlayer);
-        };
-        attackBtn.addEventListener('touchstart', doAttack);
-        attackBtn.addEventListener('mousedown', doAttack);
-    }
-
-    if (blockBtn) {
-        const setBlocking = (value) => (e) => {
-            e.preventDefault();
-            const myPlayer = isHost ? player1 : player2;
-            myPlayer.blocking = value;
-        };
-        blockBtn.addEventListener('touchstart', setBlocking(true));
-        blockBtn.addEventListener('touchend', setBlocking(false));
-        blockBtn.addEventListener('touchcancel', setBlocking(false));
-        blockBtn.addEventListener('mousedown', setBlocking(true));
-        blockBtn.addEventListener('mouseup', setBlocking(false));
-        blockBtn.addEventListener('mouseleave', setBlocking(false));
-    }
-}
+/* =====================================================================
+   Gameplay
+   ===================================================================== */
 
 function tryAttack(player) {
-    if (koTime) return;
+    if (match.phase !== 'fight') return;
     const now = Date.now();
-    if (player.attacking || now < (player.attackReadyTime || 0)) return;
+    if (player.attacking || now < player.attackReadyTime) return;
 
     player.attacking = true;
     player.attackEndTime = now + ATTACK_DURATION;
@@ -646,11 +828,13 @@ function clampX(player) {
     player.x = Math.max(0, Math.min(CANVAS_WIDTH - PLAYER_SIZE, player.x));
 }
 
-function updatePlayer(player, opponent) {
+function updatePlayer(player, opponent, frozen) {
+    const keys = frozen ? { w: false, a: false, s: false, d: false } : player.keys;
+
     // --- Walking ---
-    const dir = (player.keys.d ? 1 : 0) - (player.keys.a ? 1 : 0);
+    const dir = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
     player.vx = dir * MOVE_SPEED;
-    // Walking right (forward) shows the image normally, walking left (backwards) flips it.
+    // Walking right shows the image normally, walking left flips it
     if (dir !== 0) player.facing = dir;
 
     player.x += player.vx;
@@ -663,7 +847,7 @@ function updatePlayer(player, opponent) {
     }
 
     // --- Jumping ---
-    if (player.keys.w && player.onGround) {
+    if (keys.w && player.onGround) {
         player.vy = -JUMP_FORCE;
         player.onGround = false;
     }
@@ -677,9 +861,9 @@ function updatePlayer(player, opponent) {
     player.onGround = false;
 
     if (player.vy >= 0) {
-        // Land on a ground.png platform we were above last frame
+        // Land on a platform we were above last frame
         for (const p of PLATFORMS) {
-            if (!p.floor && player.keys.s) continue; // hold S to drop through
+            if (!p.floor && keys.s) continue; // hold S to drop through
             const overX = player.x + PLAYER_SIZE > p.x && player.x < p.x + p.w;
             if (overX && prevBottom <= p.y + 0.01 && bottom >= p.y) {
                 player.y = p.y - PLAYER_SIZE;
@@ -719,96 +903,99 @@ function updatePlayer(player, opponent) {
         player.vy = 0;
     }
 
-    // End the attack pose once its window is over
     if (player.attacking && Date.now() > player.attackEndTime) {
         player.attacking = false;
     }
 }
 
-function checkAttackHit(myPlayer, opponent) {
-    if (!myPlayer.attacking || myPlayer.hasHitThisSwing) return;
+function checkAttackHit(attacker, target) {
+    if (!attacker.attacking || attacker.hasHitThisSwing || match.phase !== 'fight') return;
 
-    if (koTime) return;
-    const dx = opponent.x - myPlayer.x;
-    const dy = opponent.y - myPlayer.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    // Only hit birds in front of you (the way you're facing)
-    const inFront = dx * myPlayer.facing >= -PLAYER_SIZE / 4;
+    const dx = target.x - attacker.x;
+    const dy = target.y - attacker.y;
+    const inFront = dx * attacker.facing >= -PLAYER_SIZE / 4; // only hit what you're facing
 
-    if (distance <= ATTACK_RANGE && inFront) {
-        myPlayer.hasHitThisSwing = true;
-        if (connection && connection.open) {
-            connection.send({ type: 'hit', damage: ATTACK_DAMAGE });
-        }
+    if (Math.hypot(dx, dy) <= ATTACK_RANGE && inFront) {
+        attacker.hasHitThisSwing = true;
+        send({ type: 'hit', round: match.round, damage: ATTACK_DAMAGE });
     }
 }
 
 function sendState(player) {
-    if (connection && connection.open) {
-        connection.send({
-            type: 'position',
-            x: player.x,
-            y: player.y,
-            facing: player.facing,
-            attacking: player.attacking,
-            blocking: player.blocking,
-            health: player.health
-        });
+    send({
+        type: 'state',
+        round: match.round,
+        x: player.x,
+        y: player.y,
+        vx: player.vx,
+        facing: player.facing,
+        attacking: player.attacking,
+        blocking: player.blocking,
+        health: player.health
+    });
+}
+
+function updateMatchPhase(now) {
+    const elapsed = now - match.phaseTime;
+
+    if (match.phase === 'intro' && elapsed >= ROUND_INTRO_TIME) {
+        match.phase = 'fight';
+        match.phaseTime = now;
+    } else if (match.phase === 'fight' && isHost) {
+        hostCheckRoundOver();
+    } else if (match.phase === 'roundOver' && isHost && elapsed >= ROUND_END_DELAY) {
+        const next = match.round + 1;
+        send({ type: 'roundStart', round: next });
+        startRound(next);
     }
 }
 
 function gameLoop() {
-    if (gameScreen.style.display === 'none') {
+    if (match.phase === 'idle') {
         loopRunning = false;
         return;
     }
 
-    // Update my player
-    const myPlayer = isHost ? player1 : player2;
-    const opponent = isHost ? player2 : player1;
+    const now = performance.now();
+    const mine = me();
+    const opponent = them();
 
-    // Someone got K.O.'d: freeze for a moment, then start a new round
-    if (!koTime && (player1.health <= 0 || player2.health <= 0)) koTime = Date.now();
-    if (koTime && Date.now() - koTime > KO_RESET_DELAY) resetRound();
+    updateMatchPhase(now);
 
-    if (koTime) {
-        myPlayer.keys.a = myPlayer.keys.d = myPlayer.keys.w = false;
-        myPlayer.attacking = false;
-    }
-    updatePlayer(myPlayer, opponent);
-    checkAttackHit(myPlayer, opponent);
-    sendState(myPlayer);
+    const frozen = match.phase !== 'fight';
+    if (frozen) mine.attacking = false;
+    updatePlayer(mine, opponent, frozen);
+    checkAttackHit(mine, opponent);
+    sendState(mine);
 
-    // Clear canvas with sky gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#87CEEB');
-    gradient.addColorStop(0.5, '#E0F6FF');
-    gradient.addColorStop(1, '#90EE90');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    // Draw clouds
-    drawClouds();
-
-    // Draw the ground platforms
-    drawGround();
-
-    // Draw players
-    drawBird(player1, 'P1');
-    drawBird(player2, 'P2');
-
-    drawKOOverlay();
-
+    draw(now);
     requestAnimationFrame(gameLoop);
 }
 
+/* =====================================================================
+   Drawing
+   ===================================================================== */
+
+function draw(now) {
+    const sky = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    sky.addColorStop(0, '#5bb8f5');
+    sky.addColorStop(1, '#c9ecff');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    drawClouds();
+    drawGround();
+    drawBird(player1, nameOf('p1'), isHost);
+    drawBird(player2, nameOf('p2'), !isHost);
+    drawBanner(now);
+}
+
 function drawClouds() {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    // Simple cloud shapes
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     const time = Date.now() * 0.0001;
     for (let i = 0; i < 5; i++) {
         const x = ((time * 20 + i * 200) % (CANVAS_WIDTH + 100)) - 50;
-        const y = 50 + i * 80;
+        const y = 50 + i * 70;
         ctx.beginPath();
         ctx.arc(x, y, 30, 0, Math.PI * 2);
         ctx.arc(x + 25, y, 35, 0, Math.PI * 2);
@@ -820,10 +1007,11 @@ function drawClouds() {
 function drawGround() {
     const img = groundImage;
     const ready = img && img.complete && img.naturalWidth;
+    ctx.imageSmoothingEnabled = false;
+
     for (const p of PLATFORMS) {
         if (ready) {
-            ctx.imageSmoothingEnabled = false;
-            // Skip the transparent top part of ground.png so the grass sits exactly on p.y
+            // Skip the transparent top of ground.png so the grass sits exactly on p.y
             const srcY = img.naturalHeight * GROUND_TOP_CROP / 100;
             const srcH = img.naturalHeight - srcY;
             const tile = p.h * (img.naturalWidth / srcH); // keep the tile's aspect ratio
@@ -840,12 +1028,11 @@ function drawGround() {
     }
 }
 
-function drawBird(player, label) {
+function drawBird(player, name, isMe) {
     const { x, y, character, facing, attacking, blocking, health } = player;
-    const sprite = sprites[character];
+    const sprite = sprites[character] || sprites.chicken;
 
     ctx.save();
-
     // Flip the sprite horizontally when facing left
     if (facing === -1) {
         ctx.translate(x + PLAYER_SIZE, y);
@@ -854,25 +1041,25 @@ function drawBird(player, label) {
         ctx.translate(x, y);
     }
 
-    if (sprite && sprite.complete) {
+    if (sprite && sprite.complete && sprite.naturalWidth) {
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(sprite, 0, 0, PLAYER_SIZE, PLAYER_SIZE);
     } else {
-        // Fallback if sprite not loaded
         ctx.fillStyle = '#FFD700';
         ctx.fillRect(0, 0, PLAYER_SIZE, PLAYER_SIZE);
     }
 
-    // Blocking shield overlay
     if (blocking) {
-        ctx.fillStyle = 'rgba(80, 170, 255, 0.45)';
-        ctx.fillRect(0, 0, PLAYER_SIZE, PLAYER_SIZE);
+        ctx.fillStyle = 'rgba(80, 170, 255, 0.4)';
         ctx.strokeStyle = '#3fa9f5';
         ctx.lineWidth = 3;
-        ctx.strokeRect(1, 1, PLAYER_SIZE - 2, PLAYER_SIZE - 2);
+        ctx.beginPath();
+        ctx.arc(PLAYER_SIZE / 2, PLAYER_SIZE / 2, PLAYER_SIZE * 0.62, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
     }
 
-    // Attack swipe, drawn in front of the direction the bird is facing
+    // Attack swipe in front of the bird
     if (attacking) {
         ctx.fillStyle = 'rgba(255, 60, 60, 0.85)';
         ctx.beginPath();
@@ -882,85 +1069,68 @@ function drawBird(player, label) {
         ctx.closePath();
         ctx.fill();
     }
-
     ctx.restore();
 
-    // Border (unflipped, in world coordinates)
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, PLAYER_SIZE, PLAYER_SIZE);
-
-    // Label
-    ctx.fillStyle = 'white';
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 3;
-    ctx.font = 'bold 12px Arial';
+    // Name tag
+    ctx.font = 'bold 13px Arial';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.strokeText(label, x + PLAYER_SIZE / 2, y - 34);
-    ctx.fillText(label, x + PLAYER_SIZE / 2, y - 34);
+    ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillStyle = isMe ? '#ffd23f' : '#ffffff';
+    ctx.strokeText(name, x + PLAYER_SIZE / 2, y - 14);
+    ctx.fillText(name, x + PLAYER_SIZE / 2, y - 14);
 
     // Health bar
-    const barWidth = PLAYER_SIZE;
-    const barHeight = 6;
-    const barX = x;
-    const barY = y - 18;
+    const barY = y - 10;
     const pct = Math.max(0, health) / MAX_HEALTH;
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(barX, barY, barWidth, barHeight);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(x, barY, PLAYER_SIZE, 6);
     ctx.fillStyle = pct > 0.5 ? '#4CAF50' : pct > 0.2 ? '#FFC107' : '#F44336';
-    ctx.fillRect(barX, barY, barWidth * pct, barHeight);
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barWidth, barHeight);
+    ctx.fillRect(x, barY, PLAYER_SIZE * pct, 6);
 }
 
-function drawKOOverlay() {
-    let winner = null;
-    if (player1.health <= 0) winner = 'P2';
-    else if (player2.health <= 0) winner = 'P1';
-    if (!winner) return;
+function drawBanner(now) {
+    let big = '';
+    let small = '';
+    const elapsed = now - match.phaseTime;
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    if (match.phase === 'intro') {
+        big = elapsed < ROUND_INTRO_TIME * 0.65 ? `Round ${match.round}` : 'Fight!';
+        small = match.round === 3 ? 'Final round' : '';
+    } else if (match.phase === 'fight' && elapsed < 500) {
+        big = 'Fight!';
+    } else if (match.phase === 'roundOver' || match.phase === 'matchOver') {
+        if (!match.roundWinner) return; // opponent left; popup handles it
+        big = 'K.O.!';
+        small = `${nameOf(match.roundWinner)} wins the round`;
+        if (match.phase === 'matchOver') small = `${nameOf(match.roundWinner)} wins the match`;
+    }
+    if (!big) return;
 
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fillRect(0, CANVAS_HEIGHT / 2 - 70, CANVAS_WIDTH, small ? 130 : 100);
+
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.font = 'bold 48px Arial';
-    ctx.fillText('K.O.', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 10);
-    ctx.font = 'bold 24px Arial';
-    ctx.fillText(winner + ' wins!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 30);
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#1a1a2e';
+    ctx.fillStyle = big === 'K.O.!' ? '#ff5a5f' : '#ffd23f';
+    ctx.font = 'bold 56px Arial';
+    ctx.strokeText(big, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20);
+    ctx.fillText(big, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20);
+
+    if (small) {
+        ctx.font = 'bold 22px Arial';
+        ctx.lineWidth = 4;
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeText(small, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 32);
+        ctx.fillText(small, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 32);
+    }
 }
 
 function showStatus(message, type) {
-    const statusDiv = document.getElementById('connection-status');
-    statusDiv.textContent = message;
-    statusDiv.style.background =
-        type === 'error' ? 'rgba(244, 67, 54, 0.3)' :
-        type === 'success' ? 'rgba(76, 175, 80, 0.3)' :
-        'rgba(255, 255, 255, 0.2)';
-}
-
-function leaveGame() {
-    randomMatchActive = false;
-    koTime = 0;
-    closeNetwork();
-
-    gameScreen.style.display = 'none';
-    characterScreen.style.display = 'block';
-
-    document.getElementById('your-room-code').innerHTML = '';
-    document.getElementById('room-code').value = '';
-    showStatus('', '');
-
-    roomCode = '';
-    isHost = false;
-    selectedCharacter = null;
-    opponentCharacter = null;
-
-    // Reset character selection
-    document.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
-    document.getElementById('confirm-character-btn').disabled = true;
+    ui.connectionStatus.textContent = message;
+    ui.connectionStatus.className = 'status ' + (type || '');
+    ui.connectionStatus.hidden = !message;
 }
