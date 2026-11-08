@@ -348,11 +348,6 @@ async function sendFriendRequest(event) {
         }
 
         const requestRef = ref(database, `friendRequests/${recipientUid}/${signedInUser.uid}`);
-        const requestSnapshot = await get(requestRef);
-        if (requestSnapshot.exists()) {
-            return showFriendsMessage('A friend request is already pending.', 'info');
-        }
-
         await set(requestRef, { createdAt: Date.now() });
         ui.friendPlayerId.value = '';
         showFriendsMessage('Friend request sent.', 'success');
