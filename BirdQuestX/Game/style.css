@@ -217,6 +217,17 @@ input[type="text"]:focus {
     text-transform: uppercase;
 }
 
+.username-preview,
+.username-status {
+    min-height: 1.2em;
+    margin: -4px 0 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.username-status[data-type="error"] { color: #ff8a8a; }
+.username-status[data-type="success"] { color: #9de4a0; }
+
 /* character picker */
 .character-grid {
     display: grid;

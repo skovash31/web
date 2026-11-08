@@ -9,8 +9,10 @@ import {
     onAuthStateChanged,
     ref,
     remove,
+    runTransaction,
     set,
-    update
+    update,
+    updateProfile
 } from "../accounts/firebase.js";
 
 /* =====================================================================
@@ -66,6 +68,8 @@ const JOIN_TIMEOUT = 6000;
 const ACCOUNT_KEY = 'birdQuestXAccount';
 const NAME_KEY = 'birdQuestXName';
 const NAME_MAX = 16;
+const USERNAME_CHANGE_INTERVAL = 7 * 24 * 60 * 60 * 1000;
+const USERNAME_PATTERN = /^[a-z0-9_]{3,16}$/;
 
 const ASSETS = '../BQX assets/';
 
@@ -88,6 +92,8 @@ let myName = 'Player';
 let selectedCharacter = null;
 let opponentName = 'Opponent';
 let signedInUser = null;
+let profileData = null;
+let profileInitialization = Promise.resolve();
 let friendRefs = [];
 let currentFriends = {};
 let incomingFriendRequests = {};
@@ -150,7 +156,7 @@ function init() {
 
     [
         'profile-screen', 'menu-screen', 'game-screen',
-        'user-badge', 'user-badge-name', 'username-input', 'confirm-character-btn',
+        'user-badge', 'user-badge-name', 'username-input', 'username-preview', 'username-status', 'confirm-character-btn',
         'player-id', 'copy-player-id-btn', 'add-friend-form', 'friend-player-id',
         'friends-status', 'friend-requests', 'friend-list',
         'connection-status', 'your-room-code', 'room-code', 'room-display',
@@ -207,6 +213,25 @@ function cleanName(name) {
     return n.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
 }
 
+function usernameFromName(name) {
+    return cleanName(name).toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, NAME_MAX)
+        .replace(/_+$/g, '');
+}
+
+function setUsernameStatus(message, type = '') {
+    ui.usernameStatus.textContent = message;
+    ui.usernameStatus.dataset.type = type;
+}
+
+function cooldownMessage(nameChangedAt) {
+    const remaining = nameChangedAt + USERNAME_CHANGE_INTERVAL - Date.now();
+    const days = Math.ceil(remaining / (24 * 60 * 60 * 1000));
+    return `You can change your @name again in ${days} day${days === 1 ? '' : 's'}.`;
+}
+
 function loadName() {
     try {
         const saved = cleanName(localStorage.getItem(NAME_KEY));
@@ -219,17 +244,147 @@ function loadName() {
 }
 
 function saveName(name) {
-    try { localStorage.setItem(NAME_KEY, name); } catch (e) { /* storage blocked */ }
+    try {
+        localStorage.setItem(NAME_KEY, name);
+        const storedAccount = localStorage.getItem(ACCOUNT_KEY);
+        const account = storedAccount && storedAccount !== 'logged-out'
+            ? JSON.parse(storedAccount)
+            : {};
+        account.username = name;
+        account.handle = usernameFromName(name);
+        localStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
+    } catch (e) { /* storage blocked */ }
+}
+
+async function saveUsernameProfile(user, name) {
+    const username = usernameFromName(name);
+    if (!USERNAME_PATTERN.test(username)) {
+        throw new Error('Your name must produce an @name with 3-16 letters, numbers, or underscores.');
+    }
+
+    const profileRef = ref(database, `users/${user.uid}/profile`);
+    const profileSnapshot = await get(profileRef);
+    const current = profileSnapshot.val();
+    const currentName = current ? cleanName(current.name || current.username) : '';
+    const hasTimestamp = current && Number.isFinite(current.nameChangedAt);
+    const isLegacyMigration = Boolean(current && !hasTimestamp && name === currentName);
+    const nameChanged = Boolean(current && !isLegacyMigration &&
+        (current.name !== name || current.username !== username));
+    const now = Date.now();
+
+    if (nameChanged && hasTimestamp &&
+        now < current.nameChangedAt + USERNAME_CHANGE_INTERVAL) {
+        throw new Error(cooldownMessage(current.nameChangedAt));
+    }
+    if (signedInUser !== user) throw new Error('Your account changed. Please try again.');
+
+    const usernameRef = ref(database, `usernames/${username}`);
+    const existingClaim = await get(usernameRef);
+    if (existingClaim.exists() && existingClaim.val() !== user.uid) {
+        throw new Error(`@${username} is already taken.`);
+    }
+
+    let claim;
+    try {
+        claim = await runTransaction(usernameRef, (owner) => {
+            if (owner === null || owner === user.uid) return user.uid;
+            return;
+        }, { applyLocally: false });
+    } catch (error) {
+        let latestClaim;
+        try {
+            latestClaim = await get(usernameRef);
+        } catch (lookupError) {
+            console.error('Could not inspect failed @name reservation:', lookupError);
+        }
+        if (latestClaim && latestClaim.exists() && latestClaim.val() !== user.uid) {
+            throw new Error(`@${username} is already taken.`);
+        }
+        throw error;
+    }
+    if (!claim.committed) throw new Error(`@${username} is already taken.`);
+
+    const nameChangedAt = nameChanged || !hasTimestamp ? now : current.nameChangedAt;
+    const profile = {
+        playerId: user.uid,
+        name,
+        username,
+        nameChangedAt
+    };
+    const profileNeedsUpdate = !current || current.playerId !== user.uid ||
+        current.name !== name || current.username !== username ||
+        current.nameChangedAt !== nameChangedAt;
+
+    if (profileNeedsUpdate) {
+        try {
+            await set(profileRef, profile);
+        } catch (error) {
+            try {
+                const latest = await get(profileRef);
+                if (!latest.exists() || latest.val().username !== username) {
+                    await runTransaction(usernameRef, (owner) =>
+                        owner === user.uid ? null : undefined,
+                    { applyLocally: false });
+                }
+            } catch (cleanupError) {
+                console.error('Could not release unused @name reservation:', cleanupError);
+            }
+            throw error;
+        }
+    }
+
+    let reservationWarning = '';
+    const oldUsername = current && current.username;
+    if (USERNAME_PATTERN.test(oldUsername || '') && oldUsername !== username) {
+        const oldUsernameRef = ref(database, `usernames/${oldUsername}`);
+        try {
+            const oldUsernameSnapshot = await get(oldUsernameRef);
+            if (oldUsernameSnapshot.val() === user.uid) {
+                await remove(oldUsernameRef);
+            }
+        } catch (error) {
+            console.error(`Could not release previous @${oldUsername}:`, error);
+            reservationWarning = `@${username} was saved, but @${oldUsername} could not be released: ${error.message}`;
+        }
+    }
+
+    profileData = profile;
+    myName = name;
+    ui.usernameInput.value = name;
+    ui.userBadgeName.textContent = `@${username}`;
+    saveName(name);
+
+    if (user.displayName !== name) {
+        try {
+            await updateProfile(user, { displayName: name });
+        } catch (error) {
+            console.error('Could not sync Firebase display name:', error);
+            setUsernameStatus(`@${username} was saved, but the account display name could not be synced: ${error.message}`, 'error');
+            return profile;
+        }
+    }
+
+    setUsernameStatus(
+        reservationWarning || `Your unique @${username} is saved.`,
+        reservationWarning ? 'error' : 'success'
+    );
+    return profile;
 }
 
 function setupProfile() {
     myName = loadName();
     ui.usernameInput.value = myName;
-    ui.userBadgeName.textContent = myName;
+    ui.userBadgeName.textContent = `@${usernameFromName(myName) || 'player'}`;
 
     const cards = document.querySelectorAll('.character-card');
     const updateConfirm = () => {
-        ui.confirmCharacterBtn.disabled = !selectedCharacter || !cleanName(ui.usernameInput.value);
+        const name = cleanName(ui.usernameInput.value);
+        const username = usernameFromName(name);
+        ui.usernamePreview.textContent = USERNAME_PATTERN.test(username)
+            ? `Proposed @name: @${username}`
+            : 'Use a name that creates a 3-16 character @name.';
+        ui.confirmCharacterBtn.disabled = !selectedCharacter || !name ||
+            !USERNAME_PATTERN.test(username);
     };
 
     cards.forEach(card => {
@@ -246,20 +401,42 @@ function setupProfile() {
 
     ui.usernameInput.addEventListener('input', () => {
         const name = cleanName(ui.usernameInput.value);
-        if (name) ui.userBadgeName.textContent = name;
+        const username = usernameFromName(name);
+        if (username) ui.userBadgeName.textContent = `@${username}`;
+        if (profileData && name !== profileData.name &&
+            Number.isFinite(profileData.nameChangedAt) &&
+            Date.now() < profileData.nameChangedAt + USERNAME_CHANGE_INTERVAL) {
+            setUsernameStatus(cooldownMessage(profileData.nameChangedAt), 'error');
+        } else {
+            setUsernameStatus('', '');
+        }
         updateConfirm();
     });
     ui.usernameInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !ui.confirmCharacterBtn.disabled) ui.confirmCharacterBtn.click();
     });
 
-    ui.confirmCharacterBtn.addEventListener('click', () => {
-        myName = cleanName(ui.usernameInput.value) || 'Player';
-        ui.usernameInput.value = myName;
-        ui.userBadgeName.textContent = myName;
-        saveName(myName);
-        showScreen('menu');
-        ui.mainMusic.play().catch(() => {});
+    ui.confirmCharacterBtn.addEventListener('click', async () => {
+        const name = cleanName(ui.usernameInput.value);
+        if (!selectedCharacter || !USERNAME_PATTERN.test(usernameFromName(name))) return;
+        ui.confirmCharacterBtn.disabled = true;
+        try {
+            if (signedInUser) {
+                await profileInitialization;
+                await saveUsernameProfile(signedInUser, name);
+            } else {
+                myName = name;
+                ui.userBadgeName.textContent = `@${usernameFromName(name)}`;
+                saveName(name);
+                setUsernameStatus('Sign in to reserve your unique @name.', 'info');
+            }
+            showScreen('menu');
+            ui.mainMusic.play().catch(() => {});
+        } catch (error) {
+            setUsernameStatus(error.message, 'error');
+        } finally {
+            updateConfirm();
+        }
     });
 
     ui.userBadge.addEventListener('click', () => {
@@ -281,6 +458,8 @@ async function handleAuthState(user) {
     friendRefs.forEach(path => off(ref(database, path)));
     friendRefs = [];
     signedInUser = user;
+    profileData = null;
+    profileInitialization = Promise.resolve();
     currentFriends = {};
     incomingFriendRequests = {};
     renderFriends();
@@ -290,20 +469,36 @@ async function handleAuthState(user) {
     ui.friendPlayerId.disabled = !user;
     ui.playerId.textContent = user ? user.uid : 'Sign in to load';
     if (!user) {
+        setUsernameStatus('Sign in to reserve your unique @name.', 'info');
         showFriendsMessage('Sign in with your account to use friends.', 'error');
         return;
     }
 
-    try {
+    profileInitialization = (async () => {
         const profileRef = ref(database, `users/${user.uid}/profile`);
         const profileSnapshot = await get(profileRef);
         if (signedInUser !== user) return;
-        if (!profileSnapshot.exists()) {
-            const username = cleanName(user.displayName || user.email || loadName()) || 'Player';
-            await set(profileRef, { playerId: user.uid, username });
+        const existing = profileSnapshot.val();
+        let name = cleanName(existing && (existing.name || existing.username) ||
+            user.displayName || user.email || loadName()) || `Player_${user.uid.slice(0, 8)}`;
+        if (!USERNAME_PATTERN.test(usernameFromName(name))) {
+            name = `Player_${user.uid.slice(0, 8)}`;
         }
-        await set(ref(database, `playerIds/${user.uid}`), user.uid);
+        await saveUsernameProfile(user, name);
+    })();
 
+    try {
+        await profileInitialization;
+    } catch (error) {
+        profileInitialization = Promise.resolve();
+        setUsernameStatus(`Could not load your @name: ${error.message}. Choose an available name and continue.`, 'error');
+        showFriendDatabaseError(error);
+        return;
+    }
+
+    if (signedInUser !== user) return;
+    try {
+        await set(ref(database, `playerIds/${user.uid}`), user.uid);
         const friendsPath = `users/${user.uid}/friends`;
         const requestsPath = `friendRequests/${user.uid}`;
         friendRefs = [friendsPath, requestsPath];
@@ -417,7 +612,7 @@ function renderFriends() {
         try {
             const profileSnapshot = await get(ref(database, `users/${friendUid}/profile`));
             const profile = profileSnapshot.val() || {};
-            label.textContent = `${profile.username || 'Player'} `;
+            label.textContent = `${profile.name || 'Player'} (@${profile.username || 'unknown'}) `;
             const id = document.createElement('code');
             id.textContent = friendUid;
             label.appendChild(id);
@@ -437,7 +632,7 @@ function makeFriendEntry(uid) {
     get(ref(database, `users/${uid}/profile`)).then(snapshot => {
         if (!row.isConnected) return;
         const profile = snapshot.val() || {};
-        label.textContent = `${profile.username || 'Player'} `;
+        label.textContent = `${profile.name || 'Player'} (@${profile.username || 'unknown'}) `;
         const id = document.createElement('code');
         id.textContent = uid;
         label.appendChild(id);

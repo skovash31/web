@@ -113,12 +113,13 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-f
   function displayName() {
     try {
       let name = localStorage.getItem('birdQuestXName');
+      const account = JSON.parse(localStorage.getItem(accountKey));
       if (!name) {
-        const account = JSON.parse(localStorage.getItem(accountKey));
         name = account && account.username;
       }
       name = String(name || '').split('@')[0].trim().slice(0, 16);
-      return name;
+      const handle = String(account && account.handle || '').trim();
+      return name && handle ? `${name} (@${handle})` : name;
     } catch (error) {
       return '';
     }

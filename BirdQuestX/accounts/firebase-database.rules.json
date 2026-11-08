@@ -2,6 +2,13 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "usernames": {
+      "$username": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((newData.exists() && newData.val() === auth.uid && (!data.exists() || data.val() === auth.uid)) || (!newData.exists() && data.val() === auth.uid && root.child('users').child(auth.uid).child('profile').child('username').val() !== $username))",
+        ".validate": "$username.matches(/^[a-z0-9_]{3,16}$/) && newData.isString()"
+      }
+    },
     "playerIds": {
       "$playerId": {
         ".read": "auth != null",
@@ -13,8 +20,8 @@
       "$uid": {
         "profile": {
           ".read": "auth != null",
-          ".write": "auth != null && auth.uid === $uid",
-          ".validate": "newData.hasChildren(['playerId', 'username']) && newData.child('playerId').val() === $uid && newData.child('username').isString()"
+          ".write": "auth != null && auth.uid === $uid && newData.hasChildren(['playerId', 'name', 'username', 'nameChangedAt']) && newData.child('playerId').val() === $uid && newData.child('username').val().matches(/^[a-z0-9_]{3,16}$/) && root.child('usernames').child(newData.child('username').val()).val() === $uid && ((!data.exists() || !data.child('nameChangedAt').exists() || (data.child('nameChangedAt').isNumber() && data.child('nameChangedAt').val() + 604800000 <= now) || (newData.child('name').val() === data.child('name').val() && newData.child('username').val() === data.child('username').val() && newData.child('nameChangedAt').val() === data.child('nameChangedAt').val())) && ((newData.child('name').val() === data.child('name').val() && newData.child('username').val() === data.child('username').val() && newData.child('nameChangedAt').val() === data.child('nameChangedAt').val()) || (newData.child('nameChangedAt').val() >= now - 300000 && newData.child('nameChangedAt').val() <= now)))",
+          ".validate": "newData.hasChildren(['playerId', 'name', 'username', 'nameChangedAt']) && newData.child('playerId').val() === $uid && newData.child('name').isString() && newData.child('username').isString() && newData.child('username').val().matches(/^[a-z0-9_]{3,16}$/) && newData.child('nameChangedAt').isNumber()"
         },
         "friends": {
           ".read": "auth != null && auth.uid === $uid",

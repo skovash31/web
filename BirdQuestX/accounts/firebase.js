@@ -16,6 +16,7 @@ export {
   onValue,
   ref,
   remove,
+  runTransaction,
   set,
   update
 } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-database.js";
