@@ -10,6 +10,7 @@ import {
     ref,
     remove,
     runTransaction,
+    serverTimestamp,
     set,
     update,
     updateProfile
@@ -226,6 +227,14 @@ function setUsernameStatus(message, type = '') {
     ui.usernameStatus.dataset.type = type;
 }
 
+function usernameSaveErrorMessage(error) {
+    const message = error && error.message ? error.message : String(error);
+    if (/permission[_ ]denied/i.test(message)) {
+        return 'Firebase denied this @name save. Publish the Realtime Database rules from accounts/firebase-database.rules.json in the Firebase console, then try again.';
+    }
+    return message;
+}
+
 function cooldownMessage(nameChangedAt) {
     const remaining = nameChangedAt + USERNAME_CHANGE_INTERVAL - Date.now();
     const days = Math.ceil(remaining / (24 * 60 * 60 * 1000));
@@ -304,8 +313,8 @@ async function saveUsernameProfile(user, name) {
     }
     if (!claim.committed) throw new Error(`@${username} is already taken.`);
 
-    const nameChangedAt = nameChanged || !hasTimestamp ? now : current.nameChangedAt;
-    const profile = {
+    const nameChangedAt = nameChanged || !hasTimestamp ? serverTimestamp() : current.nameChangedAt;
+    let profile = {
         playerId: user.uid,
         name,
         username,
@@ -318,6 +327,9 @@ async function saveUsernameProfile(user, name) {
     if (profileNeedsUpdate) {
         try {
             await set(profileRef, profile);
+            const savedProfileSnapshot = await get(profileRef);
+            profile = savedProfileSnapshot.val();
+            if (!profile) throw new Error('Could not confirm your saved @name profile. Please try again.');
         } catch (error) {
             try {
                 const latest = await get(profileRef);
@@ -433,7 +445,7 @@ function setupProfile() {
             showScreen('menu');
             ui.mainMusic.play().catch(() => {});
         } catch (error) {
-            setUsernameStatus(error.message, 'error');
+            setUsernameStatus(usernameSaveErrorMessage(error), 'error');
         } finally {
             updateConfirm();
         }
@@ -491,7 +503,7 @@ async function handleAuthState(user) {
         await profileInitialization;
     } catch (error) {
         profileInitialization = Promise.resolve();
-        setUsernameStatus(`Could not load your @name: ${error.message}. Choose an available name and continue.`, 'error');
+        setUsernameStatus(`Could not load your @name: ${usernameSaveErrorMessage(error)}`, 'error');
         showFriendDatabaseError(error);
         return;
     }
