@@ -69,7 +69,6 @@ const JOIN_TIMEOUT = 6000;
 const ACCOUNT_KEY = 'birdQuestXAccount';
 const NAME_KEY = 'birdQuestXName';
 const NAME_MAX = 16;
-const USERNAME_CHANGE_INTERVAL = 7 * 24 * 60 * 60 * 1000;
 const USERNAME_PATTERN = /^[a-z0-9_]{3,16}$/;
 
 const ASSETS = '../BQX assets/';
@@ -235,12 +234,6 @@ function usernameSaveErrorMessage(error) {
     return message;
 }
 
-function cooldownMessage(nameChangedAt) {
-    const remaining = nameChangedAt + USERNAME_CHANGE_INTERVAL - Date.now();
-    const days = Math.ceil(remaining / (24 * 60 * 60 * 1000));
-    return `You can change your @name again in ${days} day${days === 1 ? '' : 's'}.`;
-}
-
 function loadName() {
     try {
         const saved = cleanName(localStorage.getItem(NAME_KEY));
@@ -274,17 +267,9 @@ async function saveUsernameProfile(user, name) {
     const profileRef = ref(database, `users/${user.uid}/profile`);
     const profileSnapshot = await get(profileRef);
     const current = profileSnapshot.val();
-    const currentName = current ? cleanName(current.name || current.username) : '';
     const hasTimestamp = current && Number.isFinite(current.nameChangedAt);
-    const isLegacyMigration = Boolean(current && !hasTimestamp && name === currentName);
-    const nameChanged = Boolean(current && !isLegacyMigration &&
+    const nameChanged = Boolean(current &&
         (current.name !== name || current.username !== username));
-    const now = Date.now();
-
-    if (nameChanged && hasTimestamp &&
-        now < current.nameChangedAt + USERNAME_CHANGE_INTERVAL) {
-        throw new Error(cooldownMessage(current.nameChangedAt));
-    }
     if (signedInUser !== user) throw new Error('Your account changed. Please try again.');
 
     const usernameRef = ref(database, `usernames/${username}`);
@@ -415,13 +400,7 @@ function setupProfile() {
         const name = cleanName(ui.usernameInput.value);
         const username = usernameFromName(name);
         if (username) ui.userBadgeName.textContent = `@${username}`;
-        if (profileData && name !== profileData.name &&
-            Number.isFinite(profileData.nameChangedAt) &&
-            Date.now() < profileData.nameChangedAt + USERNAME_CHANGE_INTERVAL) {
-            setUsernameStatus(cooldownMessage(profileData.nameChangedAt), 'error');
-        } else {
-            setUsernameStatus('', '');
-        }
+        setUsernameStatus('', '');
         updateConfirm();
     });
     ui.usernameInput.addEventListener('keydown', (e) => {
