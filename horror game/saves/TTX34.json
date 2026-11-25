@@ -1,0 +1,15 @@
+{
+  "floorIndex": 3,
+  "journal": [],
+  "carry": {
+    "Tester": [
+      {
+        "kind": "stapler",
+        "name": "Heavy-duty stapler",
+        "ammo": 20
+      }
+    ]
+  },
+  "levelName": "Employee Containment",
+  "savedAt": 1795641757928
+}
