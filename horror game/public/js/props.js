@@ -2,6 +2,7 @@
 // (toward the open floor); wall-mounted parts sit at local z ≈ -0.95 (the wall face).
 import * as THREE from 'three';
 import { tex, textTexture } from './textures.js';
+import { makeStapler, makeStaplesBox } from './models.js';
 
 const M = new Map();
 export function mat(name) {
@@ -344,6 +345,8 @@ export function buildItem(kind, key) {
     case 'file': case 'report': box(g, 0.24, 0.025, 0.32, kind === 'file' ? new THREE.MeshStandardMaterial({ color: 0xd8b85a }) : 'paper', 0, 0.012, 0); break;
     case 'fuse': cyl(g, 0.025, 0.12, 'ledAmber', 0, 0.03, 0, { rz: Math.PI / 2 }); cyl(g, 0.03, 0.025, 'metal', 0.06, 0.03, 0, { rz: Math.PI / 2 }); cyl(g, 0.03, 0.025, 'metal', -0.06, 0.03, 0, { rz: Math.PI / 2 }); g.scale.setScalar(1.6); break;
     case 'specimen': cyl(g, 0.07, 0.22, 'specimen', 0, 0.11, 0); cyl(g, 0.075, 0.03, 'darkmetal', 0, 0.23, 0); break;
+    case 'stapler': { const m = makeStapler(); if (m) { m.root.scale.setScalar(1.6); m.root.rotation.y = 0.6; g.add(m.root); } break; }
+    case 'staples': { const m = makeStaplesBox(); if (m) { m.scale.setScalar(1.6); m.rotation.y = -0.4; g.add(m); } break; }
     default: box(g, 0.15, 0.15, 0.15, 'yellow', 0, 0.075, 0);
   }
   g.traverse((o) => { o.userData.dynamic = true; });

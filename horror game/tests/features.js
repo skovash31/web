@@ -221,6 +221,7 @@ function itemTests() {
       const label = f.areaLabels();
       const tiles = new Set();
       for (const it of f.items.values()) {
+        if (it.id.startsWith('dyn_')) continue; // staplers / staples: tested separately
         const e = f.ents.get(it.id);
         if (!f.randomizable({ ...it, state: e.hidden ? 'hidden' : 'world' })) {
           if (Math.abs(it.x - e.x) > 1e-6 || Math.abs(it.z - e.z) > 1e-6) fixedOk = false;

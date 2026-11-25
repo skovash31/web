@@ -1,7 +1,7 @@
 // Runtime state and rules for a single floor: doors, items, puzzles, hazards, triggers.
 // Everything here is authoritative; clients only send intents ("interact with X").
 import { Grid, C, toTile, tileCenter, mulberry32 } from '../shared/grid.js';
-import { PLAYER, NOISE } from '../shared/constants.js';
+import { PLAYER, NOISE, STAPLER } from '../shared/constants.js';
 
 export class Floor {
   constructor(level, room, seed) {
@@ -35,6 +35,7 @@ export class Floor {
       }
     }
     this.randomizeItems();
+    this.spawnStaplers();
     // Puzzle setup
     for (const [gid, g] of Object.entries(level.groups || {})) {
       const st = { def: g, id: gid };
@@ -114,7 +115,6 @@ export class Floor {
 
   randomizeItems() {
     const movable = [...this.items.values()].filter((it) => this.randomizable(it));
-    if (!movable.length) return;
     const g = this.grid, W = g.w;
     const label = this.areaLabels();
     const occupied = new Set();
@@ -139,6 +139,10 @@ export class Floor {
       byArea.get(label[i]).push({ x, z, y, i });
     }
     const placed = [];
+    // remembered so other loot (staplers, staples) can be scattered the same way
+    this.loot = { label, byArea, placed, areas: new Set(movable.map((it) => label[toTile(it.z) * W + toTile(it.x)])) };
+    for (const [x, z] of this.spawnTiles || this.computeSpawns()) this.loot.areas.add(label[z * W + x]);
+    this.loot.areas.delete(-1);
     const far = (c) => placed.every((p) => Math.max(Math.abs(p.x - c.x), Math.abs(p.z - c.z)) >= 3);
     // shuffle so the spacing rule doesn't always favour the same items
     for (let k = movable.length - 1; k > 0; k--) { const j = Math.floor(this.rng() * (k + 1)); [movable[k], movable[j]] = [movable[j], movable[k]]; }
@@ -154,6 +158,36 @@ export class Floor {
       const jx = (this.rng() - 0.5) * (c.y ? 0.6 : 0.9), jz = (this.rng() - 0.5) * (c.y ? 0.6 : 0.9);
       it.x = tileCenter(c.x) + jx; it.z = tileCenter(c.z) + jz; it.y = c.y;
     }
+  }
+
+  // One stapler and some boxes of staples per floor, at random spots in areas players can
+  // reach (the areas the level's own loose loot lives in, plus where the team arrives).
+  spawnStaplers() {
+    const L = this.loot;
+    if (!L) return;
+    const pool = [];
+    for (const a of L.areas) for (const c of L.byArea.get(a) || []) if (!L.placed.some((p) => p.i === c.i)) pool.push(c);
+    const pick = () => {
+      const free = pool.filter((c) => !L.placed.some((p) => p.i === c.i));
+      if (!free.length) return null;
+      const spaced = free.filter((c) => L.placed.every((p) => Math.max(Math.abs(p.x - c.x), Math.abs(p.z - c.z)) >= 3));
+      const from = spaced.length ? spaced : free;
+      const c = from[Math.floor(this.rng() * from.length)];
+      L.placed.push(c);
+      return c;
+    };
+    const place = (kind, name, extra) => {
+      const c = pick();
+      if (!c) return null;
+      const it = this.createItem(kind, name, extra);
+      it.state = 'world';
+      it.x = tileCenter(c.x) + (this.rng() - 0.5) * 0.6; it.z = tileCenter(c.z) + (this.rng() - 0.5) * 0.6; it.y = c.y;
+      this.syncItemEntity(it);
+      return it;
+    };
+    place('stapler', 'Heavy-duty stapler', { ammo: 0 });
+    const boxes = this.level.index === 0 ? 1 : 2;
+    for (let i = 0; i < boxes; i++) place('staples', 'Box of staples', { count: STAPLER.perBox });
   }
 
   computeSpawns() {
@@ -206,7 +240,7 @@ export class Floor {
   }
 
   itemPublic(it) {
-    return { id: it.id, kind: it.kind, name: it.name, key: it.key, state: it.state, holder: it.holder, x: +it.x.toFixed(2), y: it.y, z: +it.z.toFixed(2) };
+    return { id: it.id, kind: it.kind, name: it.name, key: it.key, state: it.state, holder: it.holder, x: +it.x.toFixed(2), y: it.y, z: +it.z.toFixed(2), ammo: it.ammo, count: it.count };
   }
 
   // ---------------------------------------------------------------- doors & flags
@@ -362,6 +396,7 @@ export class Floor {
       it.x = p.x + (Math.random() - 0.5) * 0.6; it.z = p.z + (Math.random() - 0.5) * 0.6; it.y = 0;
       // make sure it lands on an open tile so it can be reached
       if (!this.grid.isOpen(toTile(it.x), toTile(it.z)) && this.grid.cell(toTile(it.x), toTile(it.z)) !== C.VENT) { it.x = tileCenter(toTile(p.x)); it.z = tileCenter(toTile(p.z)); }
+      this.syncItemEntity(it);
       this.room.broadcastEvent({ type: 'item', item: this.itemPublic(it) });
     }
     p.inventory = keep;

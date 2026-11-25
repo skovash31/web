@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { LEVEL_BY_ID, LEVELS } from '../shared/levels/index.js';
 import { C, toTile } from '../shared/grid.js';
-import { PLAYER, SEND_RATE, DIFFICULTIES } from '../shared/constants.js';
+import { PLAYER, SEND_RATE, DIFFICULTIES, STAPLER } from '../shared/constants.js';
 import { World } from './world.js';
 import { LocalPlayer } from './player.js';
 import { Remotes } from './remotes.js';
@@ -15,6 +15,8 @@ import { loadModels } from './models.js';
 import { Story } from './story.js';
 import { Cutscenes } from './cutscene.js';
 import { Finale } from './ending.js';
+import { Music } from './music.js';
+import { StapleFX } from './staples.js';
 
 // ---------------------------------------------------------------- setup
 const canvas = document.getElementById('game');
@@ -180,6 +182,9 @@ net.on('floor', async (f) => {
   me.battery = Math.max(me.battery, 35);
   G.deathCam = null; G.travelling = false; G.markerCache = null;
   cutscenes.stop();
+  stapleFX.clear();
+  (f.ceoStaples || []).forEach((s) => stapleFX.attach(s));
+  G.reloadEnd = 0; G.escapeClosed = false;
   G.sawCeo = false;
   if (changed) story.reset();
   ui.hiding(false); ui.spectate(null); ui.gameover(false);
@@ -222,6 +227,12 @@ net.on('inv', (d) => {
   const prev = new Set(G.invIds || []);
   G.invIds = d.items.map((i) => i.id);
   ui.inventory(d.items);
+  // stapler ammo: loaded in the stapler / loose staples in boxes
+  const st = d.items.find((i) => i.kind === 'stapler');
+  G.stapler = st ? { id: st.id, loaded: st.ammo || 0, reserve: d.items.filter((i) => i.kind === 'staples').reduce((n, i) => n + (i.count || 0), 0) } : null;
+  if (d.reloading > 0) { G.reloadStart = performance.now(); G.reloadEnd = G.reloadStart + d.reloading * 1000; audio.play('staplerOpen'); }
+  else if (G.reloadEnd) { G.reloadEnd = 0; if (st) { audio.play('staplerLoad'); story.say('you', st.ammo >= STAPLER.magazine ? 'Loaded. Twenty staples.' : 'Loaded what I had.', { key: 'reloaded', cooldown: 30 }); } }
+  if (G.invReady && st && !prev.has(st.id)) ui.select(d.items.indexOf(st)); // grab it ready to use
   if (G.invReady) {
     for (const it of d.items) {
       if (prev.has(it.id)) continue;
@@ -231,6 +242,10 @@ net.on('inv', (d) => {
     }
   }
   G.invReady = true;
+});
+net.on('ammo', (a) => {
+  if (a.msg) ui.message(a.msg, 2.5, true);
+  if (a.dry) { audio.play('dry'); if (G.stapler && !G.stapler.reserve) story.say('you', 'Empty. I need more staples.', { key: 'nostaples', cooldown: 25 }); }
 });
 net.on('note', (n) => { ui.openNote(n); audio.play('ui'); story.read(n.id); });
 net.on('keypad', (k) => { input.unlock(); ui.openKeypad(k.digits, (code) => net.emit('interact', { id: k.id, code })); });
@@ -320,7 +335,7 @@ function handleEvent(e) {
       break;
     }
     case 'cutscene':
-      if (e.id === 'elevatorEscape') { cutscenes.elevatorEscape(e.phase, e); if (e.phase === 'start') { me.hidden = null; ui.hiding(false); ui.closeModal(); } }
+      if (e.id === 'elevatorEscape') { if (e.phase === 'closed') G.escapeClosed = true; cutscenes.elevatorEscape(e.phase, e); if (e.phase === 'start') { me.hidden = null; ui.hiding(false); ui.closeModal(); } }
       break;
     case 'ceo':
       if (e.what === 'chase') {
@@ -341,9 +356,20 @@ function handleEvent(e) {
           else story.say(G.roster.find((p) => p.id === e.by)?.name || 'you', 'I blinded him! Run!', { priority: true });
         }
       }
+      if (e.what === 'stun') {
+        me.shake = Math.max(me.shake, 0.25);
+        if (e.by !== G.myId && me.alive) story.say(G.roster.find((p) => p.id === e.by)?.name || 'you', 'I stapled him! He\'s down!', { priority: true });
+      }
+      if (e.what === 'unstun') { stapleFX.release(); if (me.alive && remotes.ceoState && Math.hypot(remotes.ceoState.x - me.pos.x, remotes.ceoState.z - me.pos.z) < 20) story.say('you', "He's getting back up!", { key: 'unstun', cooldown: 15, priority: true }); }
       if (e.what === 'unblind' && me.alive && remotes.ceoState && Math.hypot(remotes.ceoState.x - me.pos.x, remotes.ceoState.z - me.pos.z) < 18) story.say('you', "He's shaking it off...", { key: 'unblind', cooldown: 20 });
       break;
     case 'trap': world.setTrapSealed(); me.shake = 2; break;
+    case 'staple': {
+      stapleFX.shot(e);
+      if (e.by !== G.myId) audio.play('staple', [e.from[0], e.from[2]]);
+      if (e.by === G.myId && e.hit) story.say('you', e.stunned ? pick(['Got him!', 'Right in him — MOVE!', "He's down! Go, go!"]) : 'Another one in him.', { priority: true, key: 'staplehit', cooldown: e.stunned ? 0 : 6 });
+      break;
+    }
     case 'left': G.alive.delete(e.id); break;
     default: break;
   }
@@ -553,7 +579,8 @@ function updateStun(dt) {
   const c = remotes.ceoState;
   const playing = G.phase === 'playing' && me.alive && c && remotes.ceoActive && !cutscenes.active;
   let mode = null, label = '', fill = 0;
-  if (playing && c.bl > 0) { mode = 'blind'; label = 'THATCH IS BLINDED'; fill = c.bl / STUN.duration; }
+  if (playing && c.sn > 0) { mode = 'stunned'; label = `THATCH IS STUNNED · ${Math.ceil(c.sn)}s`; fill = c.sn / STAPLER.stun; }
+  else if (playing && c.bl > 0) { mode = 'blind'; label = 'THATCH IS BLINDED'; fill = c.bl / STUN.duration; }
   else if (playing && c.cd > 0) { mode = 'cool'; label = `Flashlight stun recharging · ${Math.ceil(c.cd)}s`; fill = 1 - c.cd / STUN.cooldown; }
   else if (playing) {
     const near = Math.hypot(c.x - me.pos.x, c.z - me.pos.z) < 14;
@@ -570,7 +597,98 @@ function updateStun(dt) {
   el.classList.toggle('hidden', !mode);
   el.className = mode ? mode : 'hidden';
   if (mode) { $('stun-label').textContent = label; $('stun-fill').style.width = `${Math.round(fill * 100)}%`; }
-  $('crosshair').classList.toggle('stun-aim', !!(playing && !(c.bl > 0) && !(c.cd > 0) && aimingAtEyes()));
+  $('crosshair').classList.toggle('stun-aim', !!(playing && !(c.sn > 0) && !(c.bl > 0) && !(c.cd > 0) && aimingAtEyes()));
+}
+
+// ---------------------------------------------------------------- the stapler
+const stapleFX = new StapleFX(scene, remotes, audio);
+const music = new Music(audio);
+Object.assign(window.__dbg, { music, stapleFX, G });
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const raycaster = new THREE.Raycaster();
+const STAPLE_BONES = new Set(['Torso', 'Neck', 'Head', 'Arm_R', 'Arm_L', 'Forearm_R', 'Forearm_L', 'Leg_R', 'Leg_L', 'Shin_R', 'Shin_L']);
+
+function tryReload() {
+  const s = G.stapler;
+  if (!s || G.reloadEnd) return;
+  if (s.loaded >= STAPLER.magazine) return ui.message("It's already full.", 2, true);
+  if (!s.reserve) { audio.play('dry'); return ui.message('No staples to load. Find a box of staples.', 2.5, true); }
+  net.emit('reload');
+}
+
+// The server decides hits. Our own raycast against his model only says which bone the
+// staple should stick to (and where), so it lands on the same spot for everyone.
+function fireStapler() {
+  const s = G.stapler;
+  if (!s) return;
+  if (G.reloadEnd) return ui.message('Reloading...', 1.2, true);
+  const now = performance.now();
+  if (now - (G.lastFire || 0) < STAPLER.fireInterval * 1000) return;
+  if (s.loaded <= 0) {
+    audio.play('dry');
+    ui.message(s.reserve ? 'Empty — press R to reload.' : 'Out of staples. Find a box of staples.', 2, true);
+    return;
+  }
+  G.lastFire = now;
+  const dir = me.forward(new THREE.Vector3());
+  let hit = null;
+  const rig = remotes.ceoRig;
+  if (rig?.model && remotes.ceoActive) {
+    raycaster.set(camera.getWorldPosition(new THREE.Vector3()), dir);
+    raycaster.far = STAPLER.range;
+    const hits = raycaster.intersectObject(rig.model, true);
+    for (const h of hits) {
+      let o = h.object;
+      while (o && !STAPLE_BONES.has(o.name)) o = o.parent;
+      if (!o) continue;
+      const local = o.worldToLocal(h.point.clone());
+      const n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : dir.clone().negate();
+      const ln = n.clone().transformDirection(new THREE.Matrix4().copy(o.matrixWorld).invert()).normalize();
+      hit = { bone: o.name, local: local.toArray().map((v) => +v.toFixed(3)), normal: ln.toArray().map((v) => +v.toFixed(3)) };
+      break;
+    }
+  }
+  net.emit('fire', { id: s.id, dir: dir.toArray().map((v) => +v.toFixed(4)), hit });
+  s.loaded--; // the server's inventory update follows right away
+  audio.play('staple');
+  if (me.staplerVM) me.staplerVM.kick = 1;
+  me.shake = Math.max(me.shake, 0.08);
+}
+
+function updateAmmoHud() {
+  const s = G.stapler, el = $('ammo');
+  const show = !!s && G.phase === 'playing' && me.alive;
+  el.classList.toggle('hidden', !show);
+  const reloading = G.reloadEnd > 0;
+  const k = reloading ? Math.min(1, (performance.now() - G.reloadStart) / (G.reloadEnd - G.reloadStart)) : -1;
+  me.updateStapler(G.dt || 0, ui.selectedItem()?.kind === 'stapler' && G.phase === 'playing' && !cutscenes.active, k);
+  if (!show) return;
+  $('ammo-loaded').textContent = s.loaded;
+  $('ammo-reserve').textContent = s.reserve;
+  el.classList.toggle('empty', s.loaded <= 0);
+  el.classList.toggle('reloading', reloading);
+  el.classList.toggle('dim', ui.selectedItem()?.kind !== 'stapler' && !reloading);
+  $('reload-fill').style.width = `${Math.round(Math.max(0, k) * 100)}%`;
+  $('ammo-hint').textContent = reloading ? `RELOADING · ${Math.max(0, (G.reloadEnd - performance.now()) / 1000).toFixed(1)}s`
+    : ui.selectedItem()?.kind !== 'stapler' ? `select slot ${ui.items.findIndex((i) => i.kind === 'stapler') + 1} to use`
+      : s.loaded <= 0 ? (s.reserve ? 'EMPTY · press R to reload' : 'EMPTY · find a box of staples') : 'left click to fire';
+}
+
+// ---------------------------------------------------------------- music
+// One track at a time: chase > elevator > base soundtrack.
+function updateMusic() {
+  if (audio.ready && !music.ready) music.init();
+  if (!music.ready) return;
+  let want = null;
+  if (G.phase === 'finale') want = finale.shot === 1 ? 'elevator' : null;
+  else if (G.phase === 'playing') {
+    const c = remotes.ceoState;
+    const escape = cutscenes.active === 'elevatorEscape' && !G.escapeClosed;
+    const chasing = c && remotes.ceoActive && c.st === 'chase' && !(c.sn > 0) && !(c.bl > 0);
+    const inLift = G.travelling || (G.grid && G.grid.cell(toTile(me.pos.x), toTile(me.pos.z)) === C.ELEVATOR);
+    want = escape || chasing ? 'chase' : inLift ? 'elevator' : 'base';
+  }
+  music.set(want);
 }
 
 function frame(now) {
@@ -600,6 +718,9 @@ function frame(now) {
     if (inp.slot !== null) ui.select(inp.slot);
     if (inp.wheel) ui.select((ui.selected + inp.wheel + 8) % 8);
     if (inp.use && ui.selectedItem()) net.emit('useItem', ui.selectedItem().id);
+    const equipped = ui.selectedItem()?.kind === 'stapler';
+    if (inp.reload && G.stapler) tryReload();
+    if (inp.fire && equipped && !me.hidden) fireStapler();
     if (inp.drop && ui.selectedItem()) net.emit('dropItem', ui.selectedItem().id);
     // interaction
     if (me.hidden) {
@@ -646,6 +767,10 @@ function frame(now) {
   updateMarkers(dt);
   storyChecks(dt);
   updateStun(dt);
+  G.dt = dt;
+  updateAmmoHud();
+  stapleFX.update(dt);
+  updateMusic();
   const ceo = remotes.ceoState;
   const dC = ceo ? Math.hypot(ceo.x - camera.position.x, ceo.z - camera.position.z) : 99;
   const chasing = ceo && (ceo.st === 'chase' || (ceo.st === 'scripted' && ceo.fm !== 'human'));

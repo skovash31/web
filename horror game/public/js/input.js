@@ -54,6 +54,8 @@ export class Input {
       toggleFlash: active && (p.has('KeyF') || p.has('Mouse2')),
       use: active && p.has('KeyQ'),
       drop: active && p.has('KeyG'),
+      fire: active && p.has('Mouse0'),
+      reload: active && p.has('KeyR'),
       slot: null,
       wheel: active ? this.wheel : 0,
       next: active && (p.has('Mouse0') || p.has('ArrowRight')),

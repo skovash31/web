@@ -7,7 +7,7 @@ const loader = new GLTFLoader();
 const store = {};
 
 export async function loadModels(onProgress) {
-  const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb'], ['boss', 'models/boss.glb'], ['car', 'models/car.glb']];
+  const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb'], ['boss', 'models/boss.glb'], ['car', 'models/car.glb'], ['stapler', 'models/stapler.glb'], ['staple', 'models/staple.glb'], ['staples', 'models/staple_ammo.glb']];
   let done = 0;
   await Promise.all(list.map(([k, url]) => new Promise((res) => {
     loader.load(url, (g) => { store[k] = g.scene; done++; onProgress?.(done / list.length); res(); }, undefined, (e) => { console.warn('model failed', url, e); store[k] = null; done++; res(); });
@@ -54,6 +54,27 @@ export function makeFlashlight() {
   root.userData.lightOrigin = find(root, 'LightOrigin');
   root.userData.setOn = (on) => { if (lens) lens.emissiveIntensity = on ? 2.2 : 0; };
   return root;
+}
+
+// ---------------------------------------------------------------- office supplies
+// stapler.glb: fires along -Z; TopArm is the hinged top, MuzzleOrigin where staples leave.
+export function makeStapler() {
+  const src = store.stapler;
+  if (!src) return null;
+  const root = prepare(src.clone(true), { shadow: false });
+  return { root, top: find(root, 'TopArm'), muzzle: find(root, 'MuzzleOrigin') };
+}
+// staple.glb: a single staple, crown at z=0 with its legs pointing toward -Z.
+export function makeStaple() {
+  const src = store.staple;
+  if (!src) return null;
+  const root = prepare(src.clone(true), { shadow: false });
+  root.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.set(0x3a3e46); o.material.metalness = 0.85; o.material.roughness = 0.3; o.material.emissive = new THREE.Color(0x101216); } });
+  return root;
+}
+export function makeStaplesBox() {
+  const src = store.staples;
+  return src ? prepare(src.clone(true)) : null;
 }
 
 // The provided car.glb (front faces +Z, wheels are separate nodes, headlight origins
@@ -170,6 +191,7 @@ export class HumanRig {
     this.reach += (reachT - this.reach) * Math.min(1, dt * 6);
     // blinded: both hands thrown up over his eyes, staggering
     this.cover += ((anim === 'blind' ? 1 : 0) - this.cover) * Math.min(1, dt * 10);
+    this.slump = (this.slump || 0) + ((anim === 'stunned' ? 1 : 0) - (this.slump || 0)) * Math.min(1, dt * 8);
     const c = this.cover;
     this.Arm_R.rotation.x = ((moving ? -s * amp * 0.7 : 0) * (1 - this.reach) - this.reach * 1.4) * (1 - c) - c * 2.6;
     this.Arm_L.rotation.x = ((moving ? s * amp * 0.7 : 0) * (1 - this.reach) - (anim === 'kill' ? this.reach * 1.4 : 0)) * (1 - c) - c * 2.5;
@@ -178,7 +200,13 @@ export class HumanRig {
     this.Head.rotation.z = anim === 'talk' ? Math.sin(this.t * 2.2) * 0.12 : c * Math.sin(this.t * 9) * 0.25;
     this.Head.rotation.x = anim === 'talk' ? Math.sin(this.t * 3.1) * 0.05 : c * 0.35;
     this.model.position.y = moving ? Math.abs(Math.cos(this.phase)) * 0.03 : 0;
-    this.Torso.rotation.x = speed > 3 ? 0.25 : c * 0.2;
+    this.Torso.rotation.x = speed > 3 ? 0.25 : c * 0.2 + this.slump * 0.45;
+    if (this.slump > 0.01) {
+      const k = this.slump, j = Math.sin(this.t * 29) * 0.06;
+      this.Head.rotation.x += k * 0.6; this.Head.rotation.z += k * (0.3 + j);
+      this.Arm_R.rotation.x = this.Arm_R.rotation.x * (1 - k) + k * (0.3 + j); this.Arm_L.rotation.x = this.Arm_L.rotation.x * (1 - k) + k * (0.2 - j);
+      this.Leg_R.rotation.x = this.Leg_R.rotation.x * (1 - k) - k * 0.25; this.Leg_L.rotation.x = this.Leg_L.rotation.x * (1 - k) + k * 0.1;
+    }
   }
 
   headWorldPos(out) {
@@ -256,7 +284,7 @@ export class MonsterRig {
     if (moving && sign !== this.lastStepSign && this.stepCallback) this.stepCallback(speed);
     this.lastStepSign = sign;
     const amp = run ? 0.7 : 0.4;
-    const leanTarget = run ? 0.42 : anim === 'search' ? 0.12 : anim === 'roar' ? -0.35 : anim === 'blind' ? -0.3 : anim === 'kill' ? 0.25 : 0.06;
+    const leanTarget = run ? 0.42 : anim === 'search' ? 0.12 : anim === 'roar' ? -0.35 : anim === 'blind' ? -0.3 : anim === 'kill' ? 0.25 : anim === 'stunned' ? 0.55 : 0.06;
     this.lean += (leanTarget - this.lean) * Math.min(1, dt * 5);
     // random unnatural head twitches
     this.twitch -= dt;
@@ -280,6 +308,8 @@ export class MonsterRig {
     if (anim === 'burn') { armRx = -2.6 + Math.sin(t * 17) * 0.6; armLx = -2.4 + Math.cos(t * 19) * 0.6; foreR = Math.sin(t * 13) * 0.8; foreL = Math.cos(t * 11) * 0.8; headX = -0.8 + Math.sin(t * 31) * 0.3; headZ = Math.sin(t * 23) * 0.4; }
     // blinded: claws thrown up over his face, head shaking
     if (anim === 'blind') { armRx = -2.3 + Math.sin(t * 13) * 0.15; armLx = -2.2 + Math.cos(t * 11) * 0.15; armRz = 0.5; armLz = -0.5; foreR = 1.1; foreL = 1.1; headX = 0.4 + Math.sin(t * 21) * 0.15; headY = Math.sin(t * 7) * 0.6; headZ = Math.sin(t * 17) * 0.25; }
+    // stapled: staggered and seizing, arms hanging, head lolling, twitching all over
+    if (anim === 'stunned') { const j = Math.sin(t * 31) * 0.08 + Math.sin(t * 13) * 0.06; armRx = 0.25 + j; armLx = 0.15 - j; armRz = 0.25 + Math.sin(t * 7) * 0.1; armLz = -0.3; foreR = 0.5 + j * 2; foreL = 0.3 - j * 2; headX = 0.7 + Math.sin(t * 2.3) * 0.2; headY = Math.sin(t * 1.7) * 0.5; headZ = 0.5 + Math.sin(t * 23) * 0.1; }
     // chasing: arms thrust forward, claws reaching
     if (run) { armRx = -1.0 - s * 0.45; armLx = -1.0 + s * 0.45; foreR = -0.35 + Math.max(0, s) * 0.3; foreL = -0.35 + Math.max(0, -s) * 0.3; }
 
@@ -289,6 +319,7 @@ export class MonsterRig {
     let shinR = moving ? Math.max(0, -c) * kneeAmp : 0, shinL = moving ? Math.max(0, c) * kneeAmp : 0;
     if (anim === 'blind') { legR = -0.15; legL = 0.25; shinR = 0.3; shinL = 0.15; }
     if (anim === 'kill' || anim === 'roar') { shinR = 0.25; shinL = 0.25; legR = -0.15; legL = -0.15; } // braced, crouching
+    if (anim === 'stunned') { legR = -0.35; legL = -0.2; shinR = 0.75; shinL = 0.6; } // sagging at the knees
 
     // crawling through a vent: body pitched forward, clawing along
     this.crawlAmt += ((this.crawl ? 1 : 0) - this.crawlAmt) * Math.min(1, dt * 6);
@@ -312,10 +343,10 @@ export class MonsterRig {
     this.rot('Head', headX - this.lean * 0.3, headY, headZ);
     const bob = moving ? Math.abs(c) * (run ? 0.1 : 0.05) : Math.sin(t * 1.2) * 0.01;
     // folded knees lower the hips: sink the body so the soles stay on the floor
-    const sink = (Math.max(shinR, shinL) * 0.12 + (anim === 'kill' || anim === 'roar' ? 0.06 : 0)) * (1 - cr);
+    const sink = (Math.max(shinR, shinL) * 0.12 + (anim === 'kill' || anim === 'roar' ? 0.06 : 0) + (anim === 'stunned' ? 0.12 : 0)) * (1 - cr);
     this.model.position.y = (this.footOffset || 0) + bob - sink + cr * 0.2;
     this.model.rotation.x = cr * 1.3;
-    if (this.pupil) this.pupil.emissiveIntensity = anim === 'blind' ? 0.05 : run ? 1.6 : 0.6;
+    if (this.pupil) this.pupil.emissiveIntensity = anim === 'blind' ? 0.05 : anim === 'stunned' ? (Math.sin(t * 17) > 0.6 ? 0.8 : 0.05) : run ? 1.6 : 0.6;
   }
 
   // World position of his eyes (what the flashlight stun and the death camera aim at).

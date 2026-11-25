@@ -26,6 +26,7 @@ export function createServer({ port = PORT, debug = DEBUG, quiet = false } = {})
   game.use('/shared', express.static(path.join(ROOT, 'shared')));
   game.use('/vendor/three', express.static(path.join(ROOT, 'node_modules', 'three')));
   game.use('/models', express.static(path.join(ROOT, '3d models')));
+  game.use('/music', express.static(path.join(ROOT, 'music')));
   app.get('/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
   if (SITE_MODE) {
     // "/horror game" -> "/horror game/" so the game's relative paths work
@@ -99,6 +100,8 @@ export function createServer({ port = PORT, debug = DEBUG, quiet = false } = {})
     socket.on('interact', (d = {}) => { if (room && player && room.floor && room.phase === 'playing' && !room.transitioning) room.floor.interact(player, String(d.id || ''), { code: d.code }); });
     socket.on('useItem', (id) => { if (room && player) room.handleUse(player, String(id)); });
     socket.on('dropItem', (id) => { if (room && player) room.handleDrop(player, String(id)); });
+    socket.on('fire', (d) => { if (room && player && d && typeof d === 'object') room.handleFire(player, d); });
+    socket.on('reload', () => { if (room && player) room.handleReload(player); });
     socket.on('chat', (t) => { if (room && player) room.chat(player, t); });
     socket.on('debug', (cmd) => { if (room && player) room.debugCmd(player, cmd); });
     socket.on('disconnect', leave);

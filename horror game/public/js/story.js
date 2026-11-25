@@ -16,6 +16,8 @@ const PICKUP_KIND = {
   report: ['The quarterly report. Still warm from the copier.'],
   fuse: ['A fuse. The fusebox should take this.'],
   specimen: ["It's warm. And something inside is... moving.", "Don't drop it. Don't drop it.", 'That makes three. Back to the sequencer.'],
+  stapler: ['A heavy-duty stapler. This thing could actually hurt.', 'Another stapler. Good — one for everyone.'],
+  staples: ['A box of staples. Twenty in a strip.', 'More staples. Keep them coming.'],
 };
 const READ = {
   memo_pruitt: "'Nominees should not be informed'... nominated for what?",

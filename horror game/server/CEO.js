@@ -3,12 +3,25 @@
 // He only ever moves by walking along A* paths at bounded speed (no teleports),
 // opens doors physically, can't fit through vents, and is synced to every client.
 import { Grid, C, toTile, tileCenter } from '../shared/grid.js';
-import { PLAYER, DIFFICULTIES, DEFAULT_DIFFICULTY } from '../shared/constants.js';
+import { PLAYER, DIFFICULTIES, DEFAULT_DIFFICULTY, STAPLER } from '../shared/constants.js';
 
 // Flashlight stun: shine the beam into his eyes to blind him.
 export const BLIND = { duration: 5, cooldown: 15, aimTime: 0.3, range: 11 };
 
 const TAU = Math.PI * 2;
+// Closest approach between segments p1-q1 and p2-q2. Returns {t (0..1 on the first), dist}.
+function segSeg(p1, q1, p2, q2) {
+  const d1 = [q1[0] - p1[0], q1[1] - p1[1], q1[2] - p1[2]], d2 = [q2[0] - p2[0], q2[1] - p2[1], q2[2] - p2[2]];
+  const r = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r), c = dot(d1, r), b = dot(d1, d2);
+  const den = a * e - b * b;
+  let s = den > 1e-9 ? Math.max(0, Math.min(1, (b * f - c * e) / den)) : 0;
+  let t = (b * s + f) / e;
+  if (t < 0) { t = 0; s = Math.max(0, Math.min(1, -c / a)); } else if (t > 1) { t = 1; s = Math.max(0, Math.min(1, (b - c) / a)); }
+  const x = [p1[0] + d1[0] * s - (p2[0] + d2[0] * t), p1[1] + d1[1] * s - (p2[1] + d2[1] * t), p1[2] + d1[2] * s - (p2[2] + d2[2] * t)];
+  return { t: s, dist: Math.sqrt(dot(x, x)) };
+}
 const wrap = (a) => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
 
 export class CEO {
@@ -55,7 +68,11 @@ export class CEO {
     this.blindTimer = 0;     // > 0 while blinded
     this.blindCooldown = 0;  // > 0 while the stun is recharging
     this.aimTime = new Map(); // playerId -> seconds the beam has been on his eyes
+    this.stunTimer = 0;      // > 0 while stunned by a staple
+    this.staples = [];       // staples stuck in him during the current stun (for late clients)
   }
+
+  get stunned() { return this.stunTimer > 0; }
 
   get blinded() { return this.blindTimer > 0; }
 
@@ -91,13 +108,14 @@ export class CEO {
 
   snapshot() {
     return { x: +this.x.toFixed(2), z: +this.z.toFixed(2), yaw: +this.yaw.toFixed(3), st: this.state, an: this.anim, sp: +this.speed.toFixed(2), fm: this.form,
-      bl: +this.blindTimer.toFixed(1), cd: +this.blindCooldown.toFixed(1) };
+      bl: +this.blindTimer.toFixed(1), cd: +this.blindCooldown.toFixed(1), sn: +this.stunTimer.toFixed(1) };
   }
 
   // Cutscene control: walk (never teleport) to a point at a given speed, ignoring players.
   scriptMove(x, z, speed) {
     this.state = 'scripted';
     this.blindTimer = 0;
+    if (this.stunTimer > 0) this.endStun(true);
     this.scriptSpeed = speed;
     this.target = null;
     this.setGoal(x, z);
@@ -155,7 +173,7 @@ export class CEO {
 
   // Called by the room whenever a sound is made.
   hear(x, z, radius, kind, sourcePlayer) {
-    if (!this.active || this.blinded || this.state === 'trapped' || this.state === 'scripted' || (this.action && this.action.type === 'kill')) return;
+    if (!this.active || this.blinded || this.stunned || this.state === 'trapped' || this.state === 'scripted' || (this.action && this.action.type === 'kill')) return;
     const d = Math.hypot(x - this.x, z - this.z);
     let eff = radius * this.cfg.hearing;
     if (!this.grid.lineOfSight(this.x, this.z, x, z, this.doorOpen)) eff *= 0.62;
@@ -306,6 +324,7 @@ export class CEO {
   update(dt) {
     if (this.state === 'dormant') { this.anim = 'idle'; this.speed = 0; return; }
     if (this.state === 'trapped') { this.anim = 'burn'; this.speed = 0; this.yaw += dt * 3; return; }
+    if (this.updateStun(dt)) return;
     if (this.updateBlind(dt)) return;
 
     // Ongoing timed action (opening a door, roaring, killing, checking a locker)
@@ -431,6 +450,86 @@ export class CEO {
       this.lostTimer += dt * 2;
       this.look(dt);
     }
+  }
+
+  // ---------------------------------------------------------------- stapler stun
+  // Hit volumes in world space for a ray test: a capsule for the body and a sphere for
+  // the head, matching the current form and pose.
+  hitVolumes() {
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    const eye = this.eyePoint();
+    if (this.grid.cell(toTile(this.x), toTile(this.z)) === C.VENT) {
+      return [{ a: [this.x - fx * 0.4, 0.45, this.z - fz * 0.4], b: [this.x + fx * 1.0, 0.6, this.z + fz * 1.0], r: 0.38, part: 'Torso' }, { c: [eye.x, eye.y, eye.z], r: 0.32, part: 'Head' }];
+    }
+    if (this.form !== 'monster') {
+      return [{ a: [this.x, 0.15, this.z], b: [this.x, 1.45, this.z], r: 0.3, part: 'Torso' }, { c: [this.x, 1.62, this.z], r: 0.24, part: 'Head' }];
+    }
+    const lean = this.anim === 'run' ? 0.55 : 0.3;
+    return [
+      { a: [this.x, 0.25, this.z], b: [this.x + fx * lean, 1.7, this.z + fz * lean], r: 0.38, part: 'Torso' },
+      { c: [eye.x, eye.y, eye.z], r: 0.34, part: 'Head' },
+    ];
+  }
+
+  // Distance along the ray (origin o, unit dir d, max length len) to the first volume it
+  // passes within `slack` of, or null. Slack covers network latency on a moving target.
+  rayHit(o, d, len, slack = 0) {
+    let best = null;
+    for (const v of this.hitVolumes()) {
+      const r = v.r + slack;
+      let t, dist;
+      if (v.c) {
+        const w = [v.c[0] - o[0], v.c[1] - o[1], v.c[2] - o[2]];
+        t = Math.max(0, Math.min(len, w[0] * d[0] + w[1] * d[1] + w[2] * d[2]));
+        dist = Math.hypot(o[0] + d[0] * t - v.c[0], o[1] + d[1] * t - v.c[1], o[2] + d[2] * t - v.c[2]);
+      } else {
+        ({ t, dist } = segSeg(o, [o[0] + d[0] * len, o[1] + d[1] * len, o[2] + d[2] * len], v.a, v.b));
+        t *= len;
+      }
+      if (dist <= r && (!best || t < best.t)) best = { t, part: v.part, point: [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t] };
+    }
+    return best;
+  }
+
+  canBeStapled() { return this.active && this.state !== 'scripted' && this.state !== 'trapped'; }
+
+  // A staple hit: stun for exactly STAPLER.stun seconds. Hits while already stunned stick
+  // (so you can see them) but never extend or restart the stun.
+  staple(by, stuck) {
+    if (!this.canBeStapled()) return false;
+    if (stuck) this.staples.push(stuck);
+    if (this.stunTimer > 0) return false;
+    this.stunTimer = STAPLER.stun;
+    this.blindTimer = 0;
+    this.aimTime.clear();
+    if (this.action) this.action = null;
+    this.wasChasing = this.state === 'chase';
+    this.speed = 0; this.anim = 'stunned'; this.path = null;
+    this.room.broadcastEvent({ type: 'ceo', what: 'stun', by: by?.id, dur: STAPLER.stun, form: this.form });
+    this.room.noiseSound(this.x, this.z, this.form === 'monster' ? 'screech' : 'gasp');
+    return true;
+  }
+
+  updateStun(dt) {
+    if (this.blindCooldown > 0 && this.stunTimer > 0) this.blindCooldown = Math.max(0, this.blindCooldown - dt);
+    if (this.stunTimer <= 0) return false;
+    this.stunTimer -= dt;
+    this.speed = 0; this.anim = 'stunned';
+    for (const [id, a] of this.awareness) this.awareness.set(id, Math.max(0, a - 0.2 * dt));
+    if (this.stunTimer <= 0) this.endStun();
+    return true;
+  }
+
+  endStun(silent = false) {
+    this.stunTimer = 0;
+    this.staples = [];
+    this.room.broadcastEvent({ type: 'ceo', what: 'unstun' });
+    if (silent) return;
+    for (const [id, a] of this.awareness) this.awareness.set(id, Math.min(a, 0.35));
+    const lk = this.lastKnown || { x: this.x, z: this.z };
+    if (this.wasChasing || this.state === 'chase' || this.state === 'search') this.startSearch(lk.x, lk.z);
+    else if (this.state === 'investigate') this.startSearch(this.x, this.z);
+    this.wasChasing = false;
   }
 
   // ---------------------------------------------------------------- flashlight stun

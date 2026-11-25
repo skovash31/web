@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { PLAYER, WALL_H, VENT_CEIL } from '../shared/constants.js';
 import { C, toTile } from '../shared/grid.js';
-import { makeFlashlight } from './models.js';
+import { makeFlashlight, makeStapler } from './models.js';
 
 const P = PLAYER;
 
@@ -205,7 +205,44 @@ export class LocalPlayer {
     this.updateFlashlight(dt, input);
   }
 
+  // Held stapler, left hand. Built once the GLBs have loaded.
+  makeStaplerView() {
+    if (this.staplerVM) return;
+    const s = makeStapler();
+    if (!s) return;
+    const g = new THREE.Group();
+    s.root.scale.setScalar(1.25);
+    g.add(s.root);
+    g.visible = false;
+    this.camera.add(g);
+    this.staplerVM = { g, top: s.top, kick: 0, base: new THREE.Vector3(-0.2, -0.2, -0.36) };
+  }
+
+  // equipped: stapler selected; reload: 0..1 progress or -1
+  updateStapler(dt, equipped, reload) {
+    const vm = this.staplerVM;
+    if (!vm) return;
+    vm.g.visible = equipped && this.alive && !this.hidden;
+    if (!vm.g.visible) return;
+    vm.kick = Math.max(0, vm.kick - dt * 6);
+    const bob = Math.sin(this.stepPhase * 2) * 0.012 * this.bobAmt;
+    vm.g.position.copy(vm.base);
+    vm.g.position.y += bob - (this.sprinting ? 0.04 : 0);
+    vm.g.position.z += vm.kick * 0.05;
+    let rx = vm.kick * 0.25, rz = 0, ry = -0.04, top = -vm.kick * 0.18;
+    if (reload >= 0) {
+      // tip it up, flip the top open, slot the strip in, snap it shut
+      const open = reload < 0.15 ? reload / 0.15 : reload > 0.85 ? (1 - reload) / 0.15 : 1;
+      rx = open * 0.55; rz = open * 0.5; ry = -0.04 - open * 0.3;
+      top = open * 1.0 + (reload > 0.3 && reload < 0.7 ? Math.sin(reload * 40) * 0.04 : 0);
+      vm.g.position.y += open * 0.06 + (reload > 0.3 && reload < 0.7 ? Math.sin(reload * 20) * 0.01 : 0);
+    }
+    vm.g.rotation.set(rx, ry, rz);
+    if (vm.top) vm.top.rotation.x = top;
+  }
+
   refreshViewModel() {
+    this.makeStaplerView();
     const old = this.viewModel;
     const vm = makeFlashlight();
     vm.position.copy(old.position); vm.rotation.copy(old.rotation); vm.scale.copy(old.scale);

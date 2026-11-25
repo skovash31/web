@@ -53,6 +53,19 @@ export const ITEM_INFO = {
   fuse: { label: 'Fuse', icon: 'fuse' },
   specimen: { label: 'Specimen jar', icon: 'jar' },
   tape: { label: 'Access tape', icon: 'tape' },
+  stapler: { label: 'Stapler', icon: 'stapler' },
+  staples: { label: 'Box of staples', icon: 'staples' },
+};
+
+// The heavy-duty office stapler: fires staples that stun Mr. Thatch.
+export const STAPLER = {
+  magazine: 20,      // staples the stapler holds
+  perBox: 20,        // staples in one box
+  reloadTime: 5,     // seconds
+  fireInterval: 0.4, // seconds between shots
+  range: 16,         // metres
+  stun: 10,          // seconds a hit stuns him
+  noise: 5,          // a sharp CLACK he can hear
 };
 
 // Lobby difficulty (host picks it). Multipliers are applied to each floor's CEO config.

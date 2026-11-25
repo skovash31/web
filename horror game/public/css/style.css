@@ -163,3 +163,19 @@ body.cinematic #subtitle { bottom: 12vh; }
 .field.diff select { width: auto; flex: 1; background: #111; color: #eee; border: 1px solid #444; padding: 6px 8px; font: inherit; }
 .field.diff select:disabled { opacity: 0.6; }
 #diff-desc { margin: 4px 0 0; min-height: 1.2em; }
+
+#ammo { position: absolute; right: 26px; bottom: 96px; min-width: 150px; text-align: right; color: #ddd; text-shadow: 0 0 5px #000; font-size: 11px; letter-spacing: 2px; }
+#ammo .ammo-name { color: #c9b06a; letter-spacing: 3px; }
+#ammo .ammo-count { font-family: 'Courier New', monospace; margin-top: 2px; }
+#ammo .ammo-count b { font-size: 30px; color: #f2ead2; font-weight: bold; }
+#ammo .ammo-count span { font-size: 18px; color: #777; margin: 0 4px; }
+#ammo .ammo-count i { font-style: normal; font-size: 18px; color: #aaa; }
+#ammo.empty .ammo-count b { color: #ff6b4a; }
+#ammo #ammo-hint { min-height: 1.2em; color: #aaa; font-size: 10px; }
+#ammo .track { height: 4px; margin-top: 4px; visibility: hidden; }
+#ammo.reloading .track { visibility: visible; }
+#ammo.reloading #ammo-hint { color: #ffe9a0; }
+#reload-fill { height: 100%; width: 0; background: #ffe9a0; box-shadow: 0 0 6px #ffe9a0; }
+#ammo.dim { opacity: 0.45; }
+#stun.stunned #stun-label { color: #cfe8ff; font-size: 14px; letter-spacing: 4px; text-shadow: 0 0 10px #9fd0ff, 0 0 3px #000; }
+#stun.stunned #stun-fill { background: #9fd0ff; box-shadow: 0 0 8px #9fd0ff; }

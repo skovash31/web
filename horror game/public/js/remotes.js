@@ -100,7 +100,7 @@ export class Remotes {
       const r = this.players.get(p.id);
       if (r) r.buf.push(snap.t, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, f: p.f, h: p.h, hp: p.hp });
     }
-    if (snap.c) { this.ceoBuf.push(snap.t, { x: snap.c.x, y: 0, z: snap.c.z, yaw: snap.c.yaw, st: snap.c.st, an: snap.c.an, sp: snap.c.sp, fm: snap.c.fm, bl: snap.c.bl || 0, cd: snap.c.cd || 0 }); }
+    if (snap.c) { this.ceoBuf.push(snap.t, { x: snap.c.x, y: 0, z: snap.c.z, yaw: snap.c.yaw, st: snap.c.st, an: snap.c.an, sp: snap.c.sp, fm: snap.c.fm, bl: snap.c.bl || 0, cd: snap.c.cd || 0, sn: snap.c.sn || 0 }); }
     this.ceoActive = !!snap.ca;
   }
 

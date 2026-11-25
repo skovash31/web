@@ -3,11 +3,14 @@
 import { Floor } from './Floor.js';
 import { CEO } from './CEO.js';
 import { LEVELS, LEVEL_BY_ID } from '../shared/levels/index.js';
-import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY } from '../shared/constants.js';
+import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY, STAPLER } from '../shared/constants.js';
 import { toTile, C, tileCenter } from '../shared/grid.js';
 import { saveCheckpoint } from './saves.js';
 
-const CARRY_KINDS = new Set(['battery', 'medkit']);
+const CARRY_KINDS = new Set(['battery', 'medkit', 'stapler', 'staples']);
+// item fields that travel with carried items between floors
+const carryOf = (it) => ({ kind: it.kind, name: it.name, ...(it.ammo !== undefined ? { ammo: it.ammo } : {}), ...(it.count !== undefined ? { count: it.count } : {}) });
+const extrasOf = (c) => ({ ...(c.ammo !== undefined ? { ammo: c.ammo } : {}), ...(c.count !== undefined ? { count: c.count } : {}) });
 const CLIENT_NOISES = { land: NOISE.land, flashlight: NOISE.flashlight, scream: NOISE.scream };
 
 export class Room {
@@ -124,7 +127,7 @@ export class Room {
     let i = 0;
     for (const p of this.players.values()) {
       const sp = this.floor.spawnPoint(i++);
-      Object.assign(p, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, alive: true, hidden: null, health: PLAYER.maxHealth, invuln: p.god ? 99999 : 3, grace: 2, frozen: false });
+      Object.assign(p, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, alive: true, hidden: null, health: PLAYER.maxHealth, invuln: p.god ? 99999 : 3, grace: 2, frozen: false, reload: null, lastFire: 0 });
       p.yaw = Math.PI; // face out of the elevator / into the room
     }
     // Recreate carried consumables in the new floor's item table.
@@ -133,7 +136,7 @@ export class Room {
       const kinds = carry[p.name] || [];
       p.inventory = [];
       for (const it of kinds) {
-        const item = this.floor.createItem(it.kind, it.name);
+        const item = this.floor.createItem(it.kind, it.name, extrasOf(it));
         item.state = 'held'; item.holder = p.id;
         p.inventory.push(item.id);
       }
@@ -153,7 +156,7 @@ export class Room {
   restoreConsumables(p) {
     const kinds = this.lastCarry?.[p.name] || [];
     for (const it of kinds) {
-      const item = this.floor.createItem(it.kind, it.name);
+      const item = this.floor.createItem(it.kind, it.name, extrasOf(it));
       item.state = 'held'; item.holder = p.id; p.inventory.push(item.id);
     }
   }
@@ -167,6 +170,7 @@ export class Room {
       journal: this.journal,
       ceo: this.ceo ? this.ceo.snapshot() : null,
       ceoActive: !!(this.ceo && this.ceo.active),
+      ceoStaples: this.ceo && this.ceo.stunned ? this.ceo.staples : [],
       debug: this.debug,
     });
     this.sendInventory(p);
@@ -178,7 +182,7 @@ export class Room {
     this.transitioning = true;
     const carry = {};
     for (const p of this.players.values()) {
-      carry[p.name] = p.inventory.map((iid) => this.floor.items.get(iid)).filter((it) => it && CARRY_KINDS.has(it.kind)).map((it) => ({ kind: it.kind, name: it.name }));
+      carry[p.name] = p.inventory.map((iid) => this.floor.items.get(iid)).filter((it) => it && CARRY_KINDS.has(it.kind)).map(carryOf);
     }
     this.loadFloor(lvl.index, { consumables: carry });
   }
@@ -297,7 +301,96 @@ export class Room {
       p.inventory.splice(idx, 1); it.state = 'used';
       p.health = Math.min(PLAYER.maxHealth, p.health + 60);
       this.tell(p, 'You patch yourself up.');
+    } else if (it.kind === 'stapler' || it.kind === 'staples') {
+      return this.handleReload(p);
     } else return this.tell(p, 'You can\'t use that here. Find where it goes.');
+    this.sendInventory(p);
+  }
+
+  // ---------------------------------------------------------------- the stapler
+  stapleReserve(p) {
+    return p.inventory.map((iid) => this.floor.items.get(iid)).filter((it) => it && it.kind === 'staples').reduce((n, it) => n + (it.count || 0), 0);
+  }
+
+  // Fire a staple from the player's eye along `dir`. The server decides hits; the shooter's
+  // own raycast only tells it *where on the model* the staple should stick.
+  handleFire(p, d = {}) {
+    if (!p.alive || p.hidden || !this.floor || this.phase !== 'playing' || this.transitioning || p.frozen) return;
+    const st = this.floor.items.get(String(d.id || ''));
+    if (!st || st.kind !== 'stapler' || !p.inventory.includes(st.id)) return;
+    if (p.reload) return this.toPlayer(p, 'ammo', { msg: 'Still reloading...' });
+    const now = Date.now();
+    if (now - (p.lastFire || 0) < STAPLER.fireInterval * 1000 - 30) return;
+    if (!(st.ammo > 0)) return this.toPlayer(p, 'ammo', { msg: this.stapleReserve(p) ? 'Empty. Press R to reload.' : 'Out of staples. Find a box of staples.', dry: true });
+    let dir = Array.isArray(d.dir) ? d.dir.map(Number) : null;
+    if (!dir || dir.length !== 3 || dir.some((v) => !Number.isFinite(v))) return;
+    const len = Math.hypot(...dir);
+    if (len < 1e-6) return;
+    dir = dir.map((v) => v / len);
+    p.lastFire = now;
+    st.ammo--;
+    const eye = (p.y || 0) + (p.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand);
+    const o = [p.x, eye, p.z];
+    // how far the staple flies before hitting a wall, the floor or the ceiling
+    const g = this.floor.grid, doorOpen = (id) => this.floor.isDoorOpen(id);
+    let wall = STAPLER.range;
+    for (let t = 0.2; t <= STAPLER.range; t += 0.1) {
+      const x = o[0] + dir[0] * t, y = o[1] + dir[1] * t, z = o[2] + dir[2] * t;
+      const c = g.cell(toTile(x), toTile(z));
+      if (y <= 0.02 || y >= (c === C.VENT ? 1.15 : 3) || g.tileOpaque(toTile(x), toTile(z), doorOpen) && !(c === C.VENT && y < 1.15)) { wall = t; break; }
+    }
+    const c = this.ceo;
+    let hit = null;
+    if (c && c.canBeStapled()) {
+      const slack = 0.18 + Math.min(0.45, c.speed * 0.1);
+      const h = c.rayHit(o, dir, wall, slack);
+      if (h && h.t <= wall && g.lineOfSight(p.x, p.z, h.point[0], h.point[2], doorOpen)) hit = h;
+    }
+    const to = hit ? hit.point : [o[0] + dir[0] * wall, o[1] + dir[1] * wall, o[2] + dir[2] * wall];
+    let stuck = null;
+    if (hit) {
+      // where on the model to stick it: the shooter's precise hit if it is sane, else the volume hit
+      const BONES = new Set(['Torso', 'Neck', 'Head', 'Arm_R', 'Arm_L', 'Forearm_R', 'Forearm_L', 'Leg_R', 'Leg_L', 'Shin_R', 'Shin_L']);
+      const h = d.hit;
+      const ok = h && BONES.has(h.bone) && [h.local, h.normal].every((v) => Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(n) && Math.abs(n) < 3));
+      stuck = ok ? { bone: h.bone, local: h.local.map((n) => +n.toFixed(3)), normal: h.normal.map((n) => +n.toFixed(3)), form: c.form } : { bone: hit.part, local: hit.part === 'Head' ? [0, 0.22, 0.2] : [0, 0.4, 0.12], normal: [0, 0, 1], form: c.form };
+    }
+    const stunned = hit ? c.staple(p, stuck) : false;
+    this.broadcastEvent({ type: 'staple', by: p.id, from: o.map((n) => +n.toFixed(2)), to: to.map((n) => +n.toFixed(2)), hit: !!hit, stuck, stunned });
+    this.noise(p.x, p.z, STAPLER.noise, p, 'stapler');
+    this.sendInventory(p);
+  }
+
+  // Reload takes exactly STAPLER.reloadTime seconds and needs staples to load.
+  handleReload(p) {
+    if (!p.alive || !this.floor) return;
+    if (p.reload) return;
+    const st = p.inventory.map((iid) => this.floor.items.get(iid)).find((it) => it && it.kind === 'stapler');
+    if (!st) return this.toPlayer(p, 'ammo', { msg: "You don't have a stapler." });
+    if ((st.ammo || 0) >= STAPLER.magazine) return this.toPlayer(p, 'ammo', { msg: "It's already full." });
+    if (!this.stapleReserve(p)) return this.toPlayer(p, 'ammo', { msg: 'No staples to load. Find a box of staples.', dry: true });
+    const token = { stapler: st.id, floor: this.floor };
+    p.reload = token;
+    this.sendInventory(p, STAPLER.reloadTime);
+    this.noiseSound(p.x, p.z, 'staplerOpen');
+    this.floor.after(STAPLER.reloadTime, () => this.finishReload(p, token));
+  }
+
+  finishReload(p, token) {
+    if (p.reload !== token) return;
+    p.reload = null;
+    const st = this.floor.items.get(token.stapler);
+    if (!p.alive || !st || !p.inventory.includes(st.id) || this.floor !== token.floor) { this.sendInventory(p); return; }
+    let need = STAPLER.magazine - (st.ammo || 0);
+    for (const iid of [...p.inventory]) {
+      const box = this.floor.items.get(iid);
+      if (!box || box.kind !== 'staples' || need <= 0) continue;
+      const take = Math.min(need, box.count || 0);
+      box.count -= take; need -= take;
+      st.ammo = (st.ammo || 0) + take;
+      if (box.count <= 0) { p.inventory.splice(p.inventory.indexOf(iid), 1); box.state = 'used'; }
+    }
+    this.noiseSound(p.x, p.z, 'staplerLoad');
     this.sendInventory(p);
   }
 
@@ -307,6 +400,7 @@ export class Room {
     if (idx < 0) return;
     const it = this.floor.items.get(itemId);
     p.inventory.splice(idx, 1);
+    if (p.reload && (p.reload.stapler === it.id || it.kind === 'staples')) { p.reload = null; this.toPlayer(p, 'ammo', { msg: 'Reload cancelled.' }); }
     it.state = 'world'; it.holder = null;
     it.x = p.x + Math.sin(p.yaw) * 0.6; it.z = p.z + Math.cos(p.yaw) * 0.6; it.y = 0;
     const g = this.floor.grid;
@@ -378,6 +472,7 @@ export class Room {
     if (!p.alive) return;
     p.alive = false;
     p.health = 0;
+    p.reload = null;
     if (p.hidden) p.hidden = null;
     this.stats.deaths++;
     this.broadcastEvent({ type: 'death', id: p.id, name: p.name, cause, at: [p.x, p.z] });
@@ -400,9 +495,13 @@ export class Room {
   toPlayer(p, name, data) { p.socket.emit(name, data); }
   tell(p, text) { p.socket.emit('ev', { type: 'msg', text, dur: 3, private: true }); }
 
-  sendInventory(p) {
+  sendInventory(p, reloading = 0) {
     if (!this.floor) return;
-    p.socket.emit('inv', { items: p.inventory.map((iid) => this.floor.items.get(iid)).filter(Boolean).map((it) => ({ id: it.id, kind: it.kind, name: it.name, key: it.key })), health: p.health });
+    p.socket.emit('inv', {
+      items: p.inventory.map((iid) => this.floor.items.get(iid)).filter(Boolean).map((it) => ({ id: it.id, kind: it.kind, name: it.name, key: it.key, ammo: it.ammo, count: it.count })),
+      health: p.health,
+      reloading,
+    });
   }
 
   addJournal(id, title, text) {
@@ -429,6 +528,11 @@ export class Room {
     if (cmd.floor && LEVEL_BY_ID[cmd.floor]) { this.transitioning = false; this.changeFloor(cmd.floor); }
     if (cmd.flag && this.floor) this.floor.setFlag(cmd.flag);
     if (cmd.give && this.floor) { const it = this.floor.items.get(cmd.give); if (it) this.floor.pickup(p, it); }
+    if (cmd.giveKind && this.floor && (cmd.giveKind === 'stapler' || cmd.giveKind === 'staples')) {
+      const it = this.floor.createItem(cmd.giveKind, cmd.giveKind === 'stapler' ? 'Heavy-duty stapler' : 'Box of staples', cmd.giveKind === 'stapler' ? { ammo: Number(cmd.ammo) || 0 } : { count: STAPLER.perBox });
+      it.state = 'world'; it.x = p.x; it.z = p.z; this.floor.syncItemEntity(it);
+      this.floor.pickup(p, it);
+    }
     if (cmd.ceo && this.ceo) { if (cmd.ceo === 'activate') this.ceo.activate(); if (cmd.ceo === 'sleep') this.ceo.state = 'dormant'; }
     if (cmd.god === true) { p.invuln = 99999; p.god = true; }
     if (cmd.report) p.socket.emit('debugInfo', { difficulty: this.settings.difficulty, ceo: this.ceo ? { difficulty: this.ceo.difficulty, run: this.ceo.cfg.run, vents: !!this.floor.grid.ceoVents } : null, items: this.floor ? [...this.floor.items.values()].map((it) => ({ id: it.id, x: it.x, z: it.z })) : [] });

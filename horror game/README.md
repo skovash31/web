@@ -8,7 +8,7 @@ CAT = **Consolidated Advanced Technologies**, an ordinary corporation with somet
 ```
 npm install
 npm start          # http://localhost:3000
-npm test           # level validation, CEO AI, stun/difficulty/item/locker tests, full 2-player online playthrough
+npm test           # level validation, CEO AI, stun/difficulty/item/locker tests, stapler tests, full 2-player online playthrough
 node server/index.js --debug   # enables window.dbg({...}) cheats in the browser console
 ```
 
@@ -16,7 +16,7 @@ Friends on your network join via `http://<your-ip>:3000` and the 5-letter room c
 
 ## Controls
 WASD move · Mouse look (click the game to capture the mouse, Esc releases) · Shift sprint · Ctrl or C crouch · Space jump ·
-E interact/hide · Right-click or F flashlight (batteries you grab load straight in) · 1–8/wheel select item · Q use battery/medkit · G drop item (hand off keycards) · J journal · T chat
+E interact/hide · Right-click or F flashlight (batteries you grab load straight in) · Left-click fire stapler · R reload · 1–8/wheel select item · Q use battery/medkit · G drop item (hand off keycards) · J journal · T chat
 
 ## Story
 1. **The workday.** Clock in, print and deliver the quarterly report, file folders. Delivering the report brings out **Mr. Thatch, the CEO, in his human form** to introduce himself.
@@ -29,6 +29,16 @@ Your character comments on what they find and pick up, and teammates' lines show
 
 ## Flashlight stun
 Shine your flashlight **straight into Mr. Thatch's eyes** (he has to be facing you, within ~11 m, nothing in between) and hold it for a moment: he's **blinded for 5 seconds**: he freezes with his hands over his face, can't see, hear or catch anyone, and loses track of you afterwards. The stun then **recharges for 15 seconds** (shared by the team). The HUD shows *THATCH IS BLINDED* / *recharging* / *ready*, and the crosshair turns into a gold ring while your beam is on his eyes. It works on his human form too, but not during cutscenes. The server decides every blind (`server/CEO.js`, `BLIND`).
+
+## Stapler
+Every floor hides a **heavy-duty stapler** and boxes of staples (1 box in the office, 2 on each sublevel) at random reachable spots, re-rolled each time a floor loads. A stapler starts **empty**; each **box holds 20 staples**.
+- Select the stapler (it is auto-selected when you pick it up) and **left-click** to fire (one shot every 0.4 s, 16 m range).
+- **R** (or **Q** on the stapler) reloads: it takes **exactly 5 seconds**, only works if you carry staples, and you can't fire meanwhile. The HUD shows `loaded / spare` and a reload bar; the held stapler tips up and flips open.
+- A hit **stuns Mr. Thatch for exactly 10 seconds**: he can't move, attack or chase, and loses track of you afterwards. The staple **sticks where it hit** on his model (same spot for every player) and the staples fall out when he recovers. More hits during a stun stick but never extend or restart it.
+- The server decides every shot, hit and stun (`Room.handleFire`, `CEO.staple`); staplers and staples carry over between floors with their ammo.
+
+## Music
+Tracks from `music/`: `Basesoundtrack.mp3` during normal play, `chase.mp3` whenever Mr. Thatch is actively chasing anyone (not while he's blinded or stunned), `elevator.mp3` while you're in an elevator (and on the ride up in the ending). Priority is chase › elevator › base; only one track is ever audible (the old one fades out before the next fades in), base and elevator resume where they paused, and a chase theme only restarts for a new chase. See `public/js/music.js`.
 
 ## Difficulty
 The host picks it under **Lobby settings** (Normal by default; locked once the shift starts; shown on each floor's intro card).
