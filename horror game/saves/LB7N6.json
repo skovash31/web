@@ -1,0 +1,20 @@
+{
+  "floorIndex": 1,
+  "journal": [
+    {
+      "id": "clock_after",
+      "title": "NEW MESSAGE (1)",
+      "text": "FROM: dana.reyes@cat-inc.com\nSENT: 6:41 PM\nSUBJECT: (no subject)\n\nIf you are reading this I am already downstairs.\n\nThe \"retention program\" is not a bonus scheme. Nobody who gets selected comes back up. I saw Martin go into the restricted elevator in March and his desk was cleared by lunch.\n\nPruitt keeps a B1 keycard in his desk. His office is open now — the cleaners unlock it at end of day.\n\nDon't trust Thatch. Don't let him see you.\n\n— D."
+    }
+  ],
+  "carry": {
+    "jobless": [
+      {
+        "kind": "battery",
+        "name": "Battery"
+      }
+    ]
+  },
+  "levelName": "Restricted Archives",
+  "savedAt": 1795593814188
+}
