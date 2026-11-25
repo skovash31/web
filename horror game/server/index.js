@@ -101,7 +101,7 @@ export function createServer({ port = PORT, debug = DEBUG, quiet = false } = {})
     socket.on('useItem', (id) => { if (room && player) room.handleUse(player, String(id)); });
     socket.on('dropItem', (id) => { if (room && player) room.handleDrop(player, String(id)); });
     socket.on('fire', (d) => { if (room && player && d && typeof d === 'object') room.handleFire(player, d); });
-    socket.on('reload', () => { if (room && player) room.handleReload(player); });
+    socket.on('reload', (id) => { if (room && player) room.handleReload(player, typeof id === 'string' ? id : null); });
     socket.on('chat', (t) => { if (room && player) room.chat(player, t); });
     socket.on('debug', (cmd) => { if (room && player) room.debugCmd(player, cmd); });
     socket.on('disconnect', leave);

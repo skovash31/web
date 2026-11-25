@@ -58,8 +58,11 @@
           <tr><td>E</td><td>Interact / hide / leave hiding spot</td></tr>
           <tr><td>Right-click / F</td><td>Flashlight on/off (batteries you grab load automatically)</td></tr>
           <tr><td>Flashlight in his eyes</td><td>Blinds Mr. Thatch for 5 s (recharges in 15 s)</td></tr>
-          <tr><td>Left click</td><td>Fire the stapler (select it first) — a hit stuns him for 10 s</td></tr>
-          <tr><td>R / Q on stapler</td><td>Reload from a box of staples (5 s)</td></tr>
+          <tr><td>Left click</td><td>Use what's in your hand: fire the stapler, switch the flashlight, drink coffee</td></tr>
+          <tr><td>Right click</td><td>Use your off-hand item · drink coffee / use a first-aid kit you're holding</td></tr>
+          <tr><td>X</td><td>Put the held item in your off hand (swap)</td></tr>
+          <tr><td>R</td><td>Reload what you're holding: stapler from staples (5 s), flashlight from a battery</td></tr>
+          <tr><td>Q / G</td><td>Drop the held item (not the flashlight)</td></tr>
           <tr><td>1-8 / wheel</td><td>Select inventory slot</td></tr>
           <tr><td>Q</td><td>Use battery / first-aid kit</td></tr>
           <tr><td>G</td><td>Drop item (hand keycards to teammates)</td></tr>
@@ -122,7 +125,9 @@
       <div class="bar"><span>STAMINA</span><div class="track"><div id="bar-stamina" class="fill stamina"></div></div></div>
       <div class="bar"><span>BATTERY</span><div class="track"><div id="bar-battery" class="fill battery"></div></div></div>
     </div>
+    <div id="offhand"></div>
     <div id="inventory"></div>
+    <div id="boost" class="hidden"><span>☕ COFFEE</span><div class="track"><div id="boost-fill"></div></div></div>
     <div id="team"></div>
     <div id="spectate" class="hidden"></div>
     <div id="hide-hint" class="hidden">HIDING — hold still. [E] to leave</div>

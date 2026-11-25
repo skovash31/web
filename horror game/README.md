@@ -8,15 +8,24 @@ CAT = **Consolidated Advanced Technologies**, an ordinary corporation with somet
 ```
 npm install
 npm start          # http://localhost:3000
-npm test           # level validation, CEO AI, stun/difficulty/item/locker tests, stapler tests, full 2-player online playthrough
+npm test           # level validation, CEO AI, stun/difficulty/item/locker tests, stapler + held-item tests, full 2-player online playthrough
 node server/index.js --debug   # enables window.dbg({...}) cheats in the browser console
 ```
 
 Friends on your network join via `http://<your-ip>:3000` and the 5-letter room code.
 
 ## Controls
-WASD move · Mouse look (click the game to capture the mouse, Esc releases) · Shift sprint · Ctrl or C crouch · Space jump ·
-E interact/hide · Right-click or F flashlight (batteries you grab load straight in) · Left-click fire stapler · R reload · 1–8/wheel select item · Q use battery/medkit · G drop item (hand off keycards) · J journal · T chat
+WASD move · Mouse look (click the game to capture the mouse, Esc releases) · Shift sprint · Ctrl or C crouch · Space jump · E interact/hide ·
+**Left click** use what's in your hand · **Right click** use your off-hand item (or drink coffee / use a first-aid kit you're holding) · **F** flashlight on/off ·
+**X** put the held item in your off hand (swap) · **R** reload what you're holding (stapler from staples, flashlight from a battery) · **Q**/G drop the held item ·
+1–8/wheel select item · J journal · T chat
+
+## Hands and items
+You have two hands. The **main hand** (right of the screen) holds the selected hotbar slot; the **off hand** (left, the slot above the hotbar) holds one more item. Whatever you hold shows in your hand using its model from `3d models/` (flashlight, stapler, battery, first-aid kit, folder, fuse, coffee, staples).
+- **Flashlight**: everyone carries one; it starts in your off hand. It only shines while you hold it, can't be dropped and stays with you when you die. Batteries go into your inventory; when it runs low or dies, hold it and press **R** to swap in a battery (about 1.5 s).
+- **First-aid kit**: right click (or left click) while holding it: +60 health, full stamina, no more exhaustion.
+- **Coffee** (found on desks: 2 in the office, 1 per sublevel): 20 seconds of running 35% faster without using stamina. It carries between floors.
+- The stapler can be used from either hand (left click main, right click off hand).
 
 ## Story
 1. **The workday.** Clock in, print and deliver the quarterly report, file folders. Delivering the report brings out **Mr. Thatch, the CEO, in his human form** to introduce himself.

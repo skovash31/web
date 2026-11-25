@@ -1,9 +1,11 @@
 // Local first-person controller: movement, collision, crouch/jump, stamina,
-// flashlight & battery, head-bob, hiding camera and the held flashlight view model.
+// flashlight & battery, head-bob, hiding camera and the two hands: the main hand (right
+// of screen, the selected hotbar slot) and the off hand (left), each showing what it holds.
 import * as THREE from 'three';
-import { PLAYER, WALL_H, VENT_CEIL } from '../shared/constants.js';
+import { PLAYER, WALL_H, VENT_CEIL, COFFEE } from '../shared/constants.js';
 import { C, toTile } from '../shared/grid.js';
 import { makeFlashlight, makeStapler } from './models.js';
+import { buildItem } from './props.js';
 
 const P = PLAYER;
 
@@ -27,6 +29,7 @@ export class LocalPlayer {
     this.hideYaw = 0;
     this.onStep = null; this.onLand = null;
     this.speedNow = 0;
+    this.boostUntil = 0; // coffee: performance.now() timestamp
 
     // Flashlight: spotlight + held view model
     this.spot = new THREE.SpotLight(0xfff1d8, 0, 32, 0.52, 0.55, 1.3);
@@ -39,10 +42,9 @@ export class LocalPlayer {
     this.spot.position.set(0.12, -0.1, 0.05);
     this.spot.target.position.set(0, -0.05, -10);
     camera.add(this.spot.target);
-    this.viewModel = makeFlashlight();
-    this.viewModel.position.set(0.24, -0.22, -0.42);
-    this.viewModel.scale.setScalar(0.85);
-    camera.add(this.viewModel);
+    this.hands = { main: this.makeHand(1), off: this.makeHand(-1) };
+    this.handsHidden = false;
+    this.flashHand = null; // 'main' | 'off' | null — which hand holds the flashlight
     this.fill = new THREE.PointLight(0xfff1d8, 0, 3.5, 2); // faint bounce so near walls read
     camera.add(this.fill);
     this.fill.position.set(0, 0, -0.8);
@@ -59,6 +61,8 @@ export class LocalPlayer {
     this.hidden = null;
     this.crouch = false;
   }
+
+  get boosted() { return performance.now() < this.boostUntil; }
 
   get eyeHeight() { return P.eyeStand + (P.eyeCrouch - P.eyeStand) * this.crouchAmt; }
   get height() { return P.standHeight + (P.crouchHeight - P.standHeight) * this.crouchAmt; }
@@ -135,14 +139,16 @@ export class LocalPlayer {
     let wishX = 0, wishZ = 0;
     if (len > 0) { wishX = (fx * mz + rx * mx) / len; wishZ = (fz * mz + rz * mx) / len; }
     this.moving = len > 0;
-    const canSprint = input.sprint && mz > 0 && !this.crouch && !this.exhausted && this.stamina > 0;
+    const boosted = this.boosted;
+    const canSprint = input.sprint && mz > 0 && !this.crouch && (boosted || (!this.exhausted && this.stamina > 0));
     this.sprinting = canSprint && this.moving;
     let speed = this.crouch ? P.crouchSpeed : this.sprinting ? P.sprintSpeed : P.walkSpeed;
-    if (this.exhausted) speed *= 0.85;
+    if (this.exhausted && !boosted) speed *= 0.85;
     if (this.health < 35) speed *= 0.9;
+    if (boosted) speed *= COFFEE.speed;
 
-    // Stamina
-    if (this.sprinting) {
+    // Stamina (coffee: running costs nothing)
+    if (this.sprinting && !boosted) {
       this.stamina -= P.sprintDrain * dt;
       if (this.stamina <= 0) { this.stamina = 0; this.exhausted = true; }
     } else {
@@ -205,51 +211,97 @@ export class LocalPlayer {
     this.updateFlashlight(dt, input);
   }
 
-  // Held stapler, left hand. Built once the GLBs have loaded.
-  makeStaplerView() {
-    if (this.staplerVM) return;
-    const s = makeStapler();
-    if (!s) return;
+  // ---------------------------------------------------------------- hands
+  makeHand(side) {
     const g = new THREE.Group();
-    s.root.scale.setScalar(1.25);
-    g.add(s.root);
     g.visible = false;
     this.camera.add(g);
-    this.staplerVM = { g, top: s.top, kick: 0, base: new THREE.Vector3(-0.2, -0.2, -0.36) };
+    return { side, g, itemId: null, kind: null, model: null, top: null, kick: 0, anim: null, base: new THREE.Vector3(0.25 * side, -0.24, -0.46) };
   }
 
-  // equipped: stapler selected; reload: 0..1 progress or -1
-  updateStapler(dt, equipped, reload) {
-    const vm = this.staplerVM;
-    if (!vm) return;
-    vm.g.visible = equipped && this.alive && !this.hidden;
-    if (!vm.g.visible) return;
-    vm.kick = Math.max(0, vm.kick - dt * 6);
-    const bob = Math.sin(this.stepPhase * 2) * 0.012 * this.bobAmt;
-    vm.g.position.copy(vm.base);
-    vm.g.position.y += bob - (this.sprinting ? 0.04 : 0);
-    vm.g.position.z += vm.kick * 0.05;
-    let rx = vm.kick * 0.25, rz = 0, ry = -0.04, top = -vm.kick * 0.18;
-    if (reload >= 0) {
-      // tip it up, flip the top open, slot the strip in, snap it shut
-      const open = reload < 0.15 ? reload / 0.15 : reload > 0.85 ? (1 - reload) / 0.15 : 1;
-      rx = open * 0.55; rz = open * 0.5; ry = -0.04 - open * 0.3;
-      top = open * 1.0 + (reload > 0.3 && reload < 0.7 ? Math.sin(reload * 40) * 0.04 : 0);
-      vm.g.position.y += open * 0.06 + (reload > 0.3 && reload < 0.7 ? Math.sin(reload * 20) * 0.01 : 0);
+  // Put an inventory item (or nothing) in a hand. Rebuilds the held model only when it changes.
+  setHand(which, item) {
+    const h = this.hands[which];
+    const id = item?.id || null;
+    if (h.itemId === id && h.built) return;
+    h.itemId = id; h.kind = item?.kind || null; h.top = null; h.setOn = null; h.kick = 0;
+    if (h.model) h.g.remove(h.model);
+    h.model = null;
+    h.built = true;
+    if (!item) return;
+    let m;
+    if (item.kind === 'flashlight') {
+      m = makeFlashlight(); m.scale.setScalar(0.85); h.setOn = m.userData.setOn;
+    } else if (item.kind === 'stapler' && (m = makeStapler())) {
+      h.top = m.top; m = m.root; m.scale.setScalar(1.25);
+    } else {
+      // any other item: its world model, sized to sit in the palm
+      m = buildItem(item.kind, item.key);
+      const box = new THREE.Box3().setFromObject(m);
+      const size = box.getSize(new THREE.Vector3());
+      const k = 0.14 / Math.max(0.01, size.x, size.y, size.z);
+      m.scale.multiplyScalar(k);
+      m.position.set(-(box.min.x + size.x / 2) * k, -(box.min.y + size.y / 2) * k, -(box.min.z + size.z / 2) * k);
+      const wrap = new THREE.Group(); wrap.add(m);
+      // tilt flat things up so you can see them
+      if (['keycard', 'file', 'report'].includes(item.kind)) wrap.rotation.x = 1.1;
+      else wrap.rotation.set(0.25, -0.5 * h.side, 0);
+      m = wrap;
     }
-    vm.g.rotation.set(rx, ry, rz);
-    if (vm.top) vm.top.rotation.x = top;
+    m.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.renderOrder = 2; } });
+    h.model = m;
+    h.g.add(m);
   }
+
+  // Animations: 'fire' kick, reload progress per hand (0..1 or -1).
+  kickHand(which) { const h = this.hands[which]; if (h) h.kick = 1; }
+  useHandAnim(which) { const h = this.hands[which]; if (h) h.use = 1; }
+
+  updateHands(dt, { reload = {} } = {}) {
+    for (const which of ['main', 'off']) {
+      const h = this.hands[which];
+      h.g.visible = !!h.model && this.alive && !this.hidden && !this.handsHidden;
+      if (!h.g.visible) continue;
+      h.kick = Math.max(0, h.kick - dt * 6);
+      h.use = Math.max(0, (h.use || 0) - dt * 1.4);
+      const bobY = Math.sin(this.stepPhase * 2) * 0.03 * this.bobAmt;
+      const bobX = Math.cos(this.stepPhase) * 0.02 * this.bobAmt;
+      h.g.position.copy(h.base);
+      h.g.position.x += bobX * 0.5;
+      h.g.position.y += bobY * 0.6 - (this.sprinting ? 0.05 : 0);
+      h.g.position.z += h.kick * 0.05;
+      let rx = (this.sprinting ? 0.25 : 0) + 0.04 + h.kick * 0.25, ry = 0.06 * h.side, rz = 0, top = -h.kick * 0.18;
+      const r = reload[which] ?? -1;
+      if (r >= 0) {
+        const open = r < 0.15 ? r / 0.15 : r > 0.85 ? (1 - r) / 0.15 : 1;
+        const wobble = r > 0.3 && r < 0.7 ? Math.sin(r * 40) * 0.04 : 0;
+        if (h.kind === 'stapler') {
+          // tip it up, flip the top open, slot the strip in, snap it shut
+          rx = open * 0.55; rz = open * 0.5 * h.side; ry = (0.06 - open * 0.3) * h.side;
+          top = open * 1.0 + wobble;
+          h.g.position.y += open * 0.06 + (r > 0.3 && r < 0.7 ? Math.sin(r * 20) * 0.01 : 0);
+        } else if (h.kind === 'flashlight') {
+          // point it up, unscrew the cap, drop a fresh battery in
+          rx = open * 1.1; rz = open * Math.sin(r * 30) * 0.3;
+          h.g.position.y -= open * 0.06;
+        }
+      }
+      if (h.use > 0) {
+        // raise it to your face: tip the mug back / open the kit
+        const u = Math.sin(Math.min(1, (1 - h.use) / 0.7) * Math.PI);
+        h.g.position.x -= h.base.x * 0.7 * u; h.g.position.y += 0.12 * u; h.g.position.z += 0.12 * u;
+        rx -= 0.9 * u;
+      }
+      h.g.rotation.set(rx, ry, rz);
+      if (h.top) h.top.rotation.x = top;
+    }
+  }
+
+  hideHands() { this.handsHidden = true; this.hands.main.g.visible = false; this.hands.off.g.visible = false; }
 
   refreshViewModel() {
-    this.makeStaplerView();
-    const old = this.viewModel;
-    const vm = makeFlashlight();
-    vm.position.copy(old.position); vm.rotation.copy(old.rotation); vm.scale.copy(old.scale);
-    vm.visible = old.visible;
-    this.camera.remove(old);
-    this.camera.add(vm);
-    this.viewModel = vm;
+    // models just finished loading: rebuild whatever is in hand
+    for (const which of ['main', 'off']) { const h = this.hands[which]; h.built = false; this.setHand(which, h.itemId ? { id: h.itemId, kind: h.kind } : null); }
   }
 
   // Safety net: if we ever end up overlapping a solid (a server correction, leaving a
@@ -269,10 +321,13 @@ export class LocalPlayer {
 
   updateFlashlight(dt, input) {
     if (input.toggleFlash) {
-      if (this.battery > 0) this.flashlight = !this.flashlight;
+      if (this.battery > 0 && this.flashHand) this.flashlight = !this.flashlight;
       else this.flashlight = false;
       input.flashToggled = true;
     }
+    if (!this.flashHand || this.reloadingFlash) this.flashlight = false;
+    // the beam comes from whichever hand holds it
+    this.spot.position.x = this.flashHand === 'off' ? -0.12 : 0.12;
     if (this.flashlight) {
       this.battery = Math.max(0, this.battery - P.batteryDrain * dt);
       if (this.battery <= 0) this.flashlight = false;
@@ -283,7 +338,8 @@ export class LocalPlayer {
     if (this.flashlight && this.battery < 15) intensity *= 0.5 + this.battery / 30;
     this.spot.intensity = intensity;
     this.fill.intensity = this.flashlight ? 0.6 : 0;
-    this.viewModel.userData.setOn?.(intensity > 5);
+    const fh = this.flashHand && this.hands[this.flashHand];
+    fh?.setOn?.(intensity > 5);
   }
 
   applyCamera(dt, t) {
@@ -295,10 +351,6 @@ export class LocalPlayer {
     if (this.shake > 0) { this.shake = Math.max(0, this.shake - dt); shakeX = (Math.random() - 0.5) * this.shake * 0.08; shakeY = (Math.random() - 0.5) * this.shake * 0.08; }
     const breathe = this.exhausted ? Math.sin(t * 9) * 0.008 : Math.sin(t * 1.6) * 0.002;
     cam.rotation.set(this.pitch + shakeY + breathe, this.yaw + Math.PI + shakeX, 0, 'YXZ');
-    // view model sway
-    const vm = this.viewModel;
-    vm.visible = !this.hidden;
-    vm.position.set(0.25 + bobX * 0.5, -0.24 + bobY * 0.6 - (this.sprinting ? 0.05 : 0), -0.46);
-    vm.rotation.set((this.sprinting ? 0.25 : 0) + 0.04, 0.06, 0);
+    this.handsHidden = false; // main re-hides them for cutscenes / death cams after this
   }
 }

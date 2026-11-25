@@ -7,7 +7,8 @@ const loader = new GLTFLoader();
 const store = {};
 
 export async function loadModels(onProgress) {
-  const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb'], ['boss', 'models/boss.glb'], ['car', 'models/car.glb'], ['stapler', 'models/stapler.glb'], ['staple', 'models/staple.glb'], ['staples', 'models/staple_ammo.glb']];
+  const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb'], ['boss', 'models/boss.glb'], ['car', 'models/car.glb'], ['stapler', 'models/stapler.glb'], ['staple', 'models/staple.glb'], ['staples', 'models/staple_ammo.glb'],
+    ['battery', 'models/battery.glb'], ['coffee', 'models/coffee.glb'], ['folder', 'models/folder.glb'], ['fuse', 'models/fuse.glb'], ['medkit', 'models/medkit.glb']];
   let done = 0;
   await Promise.all(list.map(([k, url]) => new Promise((res) => {
     loader.load(url, (g) => { store[k] = g.scene; done++; onProgress?.(done / list.length); res(); }, undefined, (e) => { console.warn('model failed', url, e); store[k] = null; done++; res(); });
@@ -72,6 +73,17 @@ export function makeStaple() {
   root.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.set(0x3a3e46); o.material.metalness = 0.85; o.material.roughness = 0.3; o.material.emissive = new THREE.Color(0x101216); } });
   return root;
 }
+// Item kinds that have their own model in "3d models/" (folders and the report share one).
+const ITEM_MODEL = { battery: 'battery', coffee: 'coffee', file: 'folder', report: 'folder', fuse: 'fuse', medkit: 'medkit', staples: 'staples' };
+export function makeItemModel(kind) {
+  const src = store[ITEM_MODEL[kind]];
+  if (!src) return null;
+  const root = prepare(src.clone(true));
+  if (kind === 'report') root.traverse((o) => { if (o.isMesh && o.material.name === 'Manila') { o.material = o.material.clone(); o.material.color.set(0xf4f1e8); } }); // printed report: white cover
+  if (kind === 'fuse') root.traverse((o) => { if (o.isMesh && o.material.name === 'Filament') { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0xff9a30); o.material.emissiveIntensity = 0.8; } });
+  return root;
+}
+
 export function makeStaplesBox() {
   const src = store.staples;
   return src ? prepare(src.clone(true)) : null;

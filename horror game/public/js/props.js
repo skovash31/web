@@ -2,7 +2,7 @@
 // (toward the open floor); wall-mounted parts sit at local z ≈ -0.95 (the wall face).
 import * as THREE from 'three';
 import { tex, textTexture } from './textures.js';
-import { makeStapler, makeStaplesBox } from './models.js';
+import { makeStapler, makeStaplesBox, makeItemModel } from './models.js';
 
 const M = new Map();
 export function mat(name) {
@@ -332,6 +332,14 @@ export function buildProp(model, ent, r = Math.random) {
 // Small pickup meshes (kept dynamic so they can bob / be hidden)
 export function buildItem(kind, key) {
   const g = new THREE.Group();
+  // items with a model in "3d models/" use it
+  const model = kind !== 'staples' && makeItemModel(kind);
+  if (model) {
+    model.rotation.y = ((key || kind).length % 5) * 0.6; // a little variety in how they lie
+    g.add(model);
+    g.traverse((o) => { o.userData.dynamic = true; });
+    return g;
+  }
   switch (kind) {
     case 'keycard': {
       const colors = { key_b1: 0x3a8fd8, key_b2: 0x3ad86a, key_b3: 0xd8c83a, key_b4: 0xd86a3a, key_b5: 0xc83ad8 };

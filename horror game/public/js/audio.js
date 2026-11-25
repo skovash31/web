@@ -398,6 +398,8 @@ export class Audio {
       case 'staplerOpen': this.noise({ type: 'bandpass', freq: 1700, q: 4, dur: 0.12, gain: 0.35, at: A, verb: 0.3 }); this.tone({ type: 'square', freq: 600, freqEnd: 900, dur: 0.06, gain: 0.05, at: A, delay: 0.05 }); break;
       case 'staplerLoad': this.noise({ type: 'bandpass', freq: 2200, q: 3, dur: 0.07, gain: 0.45, at: A, verb: 0.3 }); this.noise({ type: 'lowpass', freq: 900, dur: 0.1, gain: 0.45, at: A, verb: 0.3, delay: 0.12 }); break;
       case 'dry': this.noise({ type: 'bandpass', freq: 3200, q: 6, dur: 0.03, gain: 0.3, at: A, verb: 0.1 }); break;
+      case 'medkit': this.noise({ type: 'bandpass', freq: 1800, q: 2, dur: 0.25, gain: 0.25, at: A, verb: 0.2 }); this.noise({ type: 'highpass', freq: 3000, dur: 0.6, gain: 0.08, at: A, delay: 0.25, attack: 0.1 }); break;
+      case 'slurp': for (let i = 0; i < 3; i++) this.noise({ type: 'bandpass', freq: 600 + i * 120, freqEnd: 1100, q: 3, dur: 0.22, gain: 0.25, at: A, verb: 0.1, delay: i * 0.28, attack: 0.04 }); this.tone({ type: 'sine', freq: 300, freqEnd: 180, dur: 0.15, gain: 0.08, at: A, delay: 0.95 }); break;
       case 'thud': this.noise({ type: 'lowpass', freq: 250, dur: 0.35, gain: 1.2, at: A, verb: 0.8 }); this.tone({ freq: 55, freqEnd: 30, dur: 0.3, gain: 0.6, at: A }); break;
       default: break;
     }

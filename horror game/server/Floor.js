@@ -136,7 +136,7 @@ export class Floor {
         y = top;
       } else if (occupied.has(i)) continue;
       if (!byArea.has(label[i])) byArea.set(label[i], []);
-      byArea.get(label[i]).push({ x, z, y, i });
+      byArea.get(label[i]).push({ x, z, y, i, on: top > 0 ? ent.model : null });
     }
     const placed = [];
     // remembered so other loot (staplers, staples) can be scattered the same way
@@ -167,8 +167,8 @@ export class Floor {
     if (!L) return;
     const pool = [];
     for (const a of L.areas) for (const c of L.byArea.get(a) || []) if (!L.placed.some((p) => p.i === c.i)) pool.push(c);
-    const pick = () => {
-      const free = pool.filter((c) => !L.placed.some((p) => p.i === c.i));
+    const pick = (filter) => {
+      const free = pool.filter((c) => !L.placed.some((p) => p.i === c.i) && (!filter || filter(c)));
       if (!free.length) return null;
       const spaced = free.filter((c) => L.placed.every((p) => Math.max(Math.abs(p.x - c.x), Math.abs(p.z - c.z)) >= 3));
       const from = spaced.length ? spaced : free;
@@ -176,8 +176,8 @@ export class Floor {
       L.placed.push(c);
       return c;
     };
-    const place = (kind, name, extra) => {
-      const c = pick();
+    const place = (kind, name, extra, filter) => {
+      const c = pick(filter);
       if (!c) return null;
       const it = this.createItem(kind, name, extra);
       it.state = 'world';
@@ -188,6 +188,11 @@ export class Floor {
     place('stapler', 'Heavy-duty stapler', { ammo: 0 });
     const boxes = this.level.index === 0 ? 1 : 2;
     for (let i = 0; i < boxes; i++) place('staples', 'Box of staples', { count: STAPLER.perBox });
+    // coffee is left on desks (any low furniture if a floor has no free desk)
+    const cups = this.level.index === 0 ? 2 : 1;
+    for (let i = 0; i < cups; i++) {
+      if (!place('coffee', 'Cup of coffee', {}, (c) => c.on === 'desk')) place('coffee', 'Cup of coffee', {}, (c) => c.y > 0);
+    }
   }
 
   computeSpawns() {
@@ -392,6 +397,7 @@ export class Floor {
     for (const iid of p.inventory) {
       const it = this.items.get(iid);
       if (!it) continue;
+      if (it.kind === 'flashlight') { keep.push(iid); continue; }
       it.state = 'world'; it.holder = null;
       it.x = p.x + (Math.random() - 0.5) * 0.6; it.z = p.z + (Math.random() - 0.5) * 0.6; it.y = 0;
       // make sure it lands on an open tile so it can be reached

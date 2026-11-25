@@ -18,6 +18,8 @@ const PICKUP_KIND = {
   specimen: ["It's warm. And something inside is... moving.", "Don't drop it. Don't drop it.", 'That makes three. Back to the sequencer.'],
   stapler: ['A heavy-duty stapler. This thing could actually hurt.', 'Another stapler. Good — one for everyone.'],
   staples: ['A box of staples. Twenty in a strip.', 'More staples. Keep them coming.'],
+  coffee: ["Someone's coffee. Still warm... I'm not asking.", 'More coffee. Bless whoever left this.'],
+  flashlight: ['My flashlight.'],
 };
 const READ = {
   memo_pruitt: "'Nominees should not be informed'... nominated for what?",

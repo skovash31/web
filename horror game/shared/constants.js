@@ -54,8 +54,15 @@ export const ITEM_INFO = {
   specimen: { label: 'Specimen jar', icon: 'jar' },
   tape: { label: 'Access tape', icon: 'tape' },
   stapler: { label: 'Stapler', icon: 'stapler' },
+  flashlight: { label: 'Flashlight', icon: 'flashlight' },
+  coffee: { label: 'Cup of coffee', icon: 'coffee' },
   staples: { label: 'Box of staples', icon: 'staples' },
 };
+
+// Office coffee: a speed boost that doesn't cost stamina.
+export const COFFEE = { duration: 20, speed: 1.35 };
+// First-aid kit: patches you up and gets your breath back.
+export const MEDKIT = { heal: 60 };
 
 // The heavy-duty office stapler: fires staples that stun Mr. Thatch.
 export const STAPLER = {

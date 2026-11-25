@@ -3,11 +3,11 @@
 import { Floor } from './Floor.js';
 import { CEO } from './CEO.js';
 import { LEVELS, LEVEL_BY_ID } from '../shared/levels/index.js';
-import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY, STAPLER } from '../shared/constants.js';
+import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY, STAPLER, COFFEE, MEDKIT } from '../shared/constants.js';
 import { toTile, C, tileCenter } from '../shared/grid.js';
 import { saveCheckpoint } from './saves.js';
 
-const CARRY_KINDS = new Set(['battery', 'medkit', 'stapler', 'staples']);
+const CARRY_KINDS = new Set(['battery', 'medkit', 'stapler', 'staples', 'coffee']);
 // item fields that travel with carried items between floors
 const carryOf = (it) => ({ kind: it.kind, name: it.name, ...(it.ammo !== undefined ? { ammo: it.ammo } : {}), ...(it.count !== undefined ? { count: it.count } : {}) });
 const extrasOf = (c) => ({ ...(c.ammo !== undefined ? { ammo: c.ammo } : {}), ...(c.count !== undefined ? { count: c.count } : {}) });
@@ -127,7 +127,7 @@ export class Room {
     let i = 0;
     for (const p of this.players.values()) {
       const sp = this.floor.spawnPoint(i++);
-      Object.assign(p, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, alive: true, hidden: null, health: PLAYER.maxHealth, invuln: p.god ? 99999 : 3, grace: 2, frozen: false, reload: null, lastFire: 0 });
+      Object.assign(p, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, alive: true, hidden: null, health: PLAYER.maxHealth, invuln: p.god ? 99999 : 3, grace: 2, frozen: false, reload: null, lastFire: 0, boostUntil: 0 });
       p.yaw = Math.PI; // face out of the elevator / into the room
     }
     // Recreate carried consumables in the new floor's item table.
@@ -141,6 +141,7 @@ export class Room {
         p.inventory.push(item.id);
       }
     }
+    for (const p of this.players.values()) this.ensureFlashlight(p);
     this.lastCarry = carry;
     // Checkpoint at the start of every floor.
     this.checkpoint = { floorIndex: index, journal: [...this.journal], carry };
@@ -153,7 +154,18 @@ export class Room {
     this.transitioning = false;
   }
 
+  // Everyone carries a flashlight. It's an inventory item (so it can be held in either
+  // hand) but it can never be dropped or lost.
+  ensureFlashlight(p) {
+    if (!this.floor) return;
+    if (p.inventory.some((iid) => this.floor.items.get(iid)?.kind === 'flashlight')) return;
+    const it = this.floor.createItem('flashlight', 'Flashlight');
+    it.state = 'held'; it.holder = p.id;
+    p.inventory.unshift(it.id);
+  }
+
   restoreConsumables(p) {
+    this.ensureFlashlight(p);
     const kinds = this.lastCarry?.[p.name] || [];
     for (const it of kinds) {
       const item = this.floor.createItem(it.kind, it.name, extrasOf(it));
@@ -269,7 +281,8 @@ export class Room {
     p.lastUpdate = now;
     const dist = Math.hypot(nx - p.x, nz - p.z);
     // Anti-teleport: reject moves faster than a sprint (with generous slack for jitter).
-    if (p.grace <= 0 && dist > PLAYER.sprintSpeed * elapsed * 1.8 + 1.0) {
+    const boost = p.boostUntil > now ? COFFEE.speed : 1;
+    if (p.grace <= 0 && dist > PLAYER.sprintSpeed * boost * elapsed * 1.8 + 1.0) {
       p.socket.emit('teleport', { x: p.x, y: p.y, z: p.z });
       return;
     }
@@ -297,12 +310,23 @@ export class Room {
       p.socket.emit('battery', { value: PLAYER.maxBattery });
       this.tell(p, 'Fresh battery in.');
     } else if (it.kind === 'medkit') {
-      if (p.health >= PLAYER.maxHealth - 1) return this.tell(p, 'You are not hurt.');
+      // heals, and the client refills stamina / clears exhaustion when it gets 'medkit'
       p.inventory.splice(idx, 1); it.state = 'used';
-      p.health = Math.min(PLAYER.maxHealth, p.health + 60);
-      this.tell(p, 'You patch yourself up.');
-    } else if (it.kind === 'stapler' || it.kind === 'staples') {
+      p.health = Math.min(PLAYER.maxHealth, p.health + MEDKIT.heal);
+      p.socket.emit('medkit', { health: p.health });
+      this.noiseSound(p.x, p.z, 'medkit');
+      this.tell(p, 'You patch yourself up and catch your breath.');
+    } else if (it.kind === 'coffee') {
+      p.inventory.splice(idx, 1); it.state = 'used';
+      p.boostUntil = Date.now() + COFFEE.duration * 1000;
+      p.socket.emit('boost', { dur: COFFEE.duration, speed: COFFEE.speed });
+      this.noiseSound(p.x, p.z, 'slurp');
+    } else if (it.kind === 'stapler') {
+      return this.handleReload(p, it.id);
+    } else if (it.kind === 'staples') {
       return this.handleReload(p);
+    } else if (it.kind === 'flashlight') {
+      return;
     } else return this.tell(p, 'You can\'t use that here. Find where it goes.');
     this.sendInventory(p);
   }
@@ -362,10 +386,11 @@ export class Room {
   }
 
   // Reload takes exactly STAPLER.reloadTime seconds and needs staples to load.
-  handleReload(p) {
+  handleReload(p, staplerId = null) {
     if (!p.alive || !this.floor) return;
     if (p.reload) return;
-    const st = p.inventory.map((iid) => this.floor.items.get(iid)).find((it) => it && it.kind === 'stapler');
+    const held = p.inventory.map((iid) => this.floor.items.get(iid)).filter((it) => it && it.kind === 'stapler');
+    const st = held.find((it) => it.id === staplerId) || held.find((it) => (it.ammo || 0) < STAPLER.magazine) || held[0];
     if (!st) return this.toPlayer(p, 'ammo', { msg: "You don't have a stapler." });
     if ((st.ammo || 0) >= STAPLER.magazine) return this.toPlayer(p, 'ammo', { msg: "It's already full." });
     if (!this.stapleReserve(p)) return this.toPlayer(p, 'ammo', { msg: 'No staples to load. Find a box of staples.', dry: true });
@@ -399,6 +424,7 @@ export class Room {
     const idx = p.inventory.indexOf(itemId);
     if (idx < 0) return;
     const it = this.floor.items.get(itemId);
+    if (it.kind === 'flashlight') return this.tell(p, "You'll need that. You can't drop your flashlight.");
     p.inventory.splice(idx, 1);
     if (p.reload && (p.reload.stapler === it.id || it.kind === 'staples')) { p.reload = null; this.toPlayer(p, 'ammo', { msg: 'Reload cancelled.' }); }
     it.state = 'world'; it.holder = null;
@@ -528,8 +554,9 @@ export class Room {
     if (cmd.floor && LEVEL_BY_ID[cmd.floor]) { this.transitioning = false; this.changeFloor(cmd.floor); }
     if (cmd.flag && this.floor) this.floor.setFlag(cmd.flag);
     if (cmd.give && this.floor) { const it = this.floor.items.get(cmd.give); if (it) this.floor.pickup(p, it); }
-    if (cmd.giveKind && this.floor && (cmd.giveKind === 'stapler' || cmd.giveKind === 'staples')) {
-      const it = this.floor.createItem(cmd.giveKind, cmd.giveKind === 'stapler' ? 'Heavy-duty stapler' : 'Box of staples', cmd.giveKind === 'stapler' ? { ammo: Number(cmd.ammo) || 0 } : { count: STAPLER.perBox });
+    const GIVE = { stapler: 'Heavy-duty stapler', staples: 'Box of staples', medkit: 'First-aid kit', coffee: 'Cup of coffee', battery: 'Battery' };
+    if (cmd.giveKind && this.floor && GIVE[cmd.giveKind]) {
+      const it = this.floor.createItem(cmd.giveKind, GIVE[cmd.giveKind], cmd.giveKind === 'stapler' ? { ammo: Number(cmd.ammo) || 0 } : cmd.giveKind === 'staples' ? { count: STAPLER.perBox } : {});
       it.state = 'world'; it.x = p.x; it.z = p.z; this.floor.syncItemEntity(it);
       this.floor.pickup(p, it);
     }

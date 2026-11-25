@@ -3,7 +3,7 @@ import { PLAYER_COLORS, ITEM_INFO, DIFFICULTIES } from '../shared/constants.js';
 
 const $ = (id) => document.getElementById(id);
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
-const ICON = { keycard: '💳', battery: '🔋', medkit: '✚', file: '📁', report: '📄', fuse: '⚡', specimen: '🧪', tape: '📼', stapler: '🗜️', staples: '📎' };
+const ICON = { keycard: '💳', battery: '🔋', medkit: '✚', file: '📁', report: '📄', fuse: '⚡', specimen: '🧪', tape: '📼', stapler: '🗜️', staples: '📎', flashlight: '🔦', coffee: '☕' };
 
 export class UI {
   constructor() {
@@ -122,6 +122,13 @@ export class UI {
     }
   }
   select(i) { this.selected = Math.max(0, Math.min(7, i)); this.inventory(this.items); }
+  // The off hand: one item held in the left hand, shown beside the hotbar.
+  offhand(it) {
+    const el = $('offhand');
+    if (!el) return;
+    el.classList.toggle('full', !!it);
+    el.innerHTML = `<span class="n">X</span>${it ? ICON[it.kind] || '?' : ''}<span class="lbl">${it ? escapeHtml(it.name) : 'off hand'}</span>`;
+  }
   selectedItem() { return this.items[this.selected]; }
 
   team(players, myId, aliveMap) {

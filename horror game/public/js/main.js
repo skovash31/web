@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { LEVEL_BY_ID, LEVELS } from '../shared/levels/index.js';
 import { C, toTile } from '../shared/grid.js';
-import { PLAYER, SEND_RATE, DIFFICULTIES, STAPLER } from '../shared/constants.js';
+import { PLAYER, SEND_RATE, DIFFICULTIES, STAPLER, COFFEE } from '../shared/constants.js';
 import { World } from './world.js';
 import { LocalPlayer } from './player.js';
 import { Remotes } from './remotes.js';
@@ -184,7 +184,7 @@ net.on('floor', async (f) => {
   cutscenes.stop();
   stapleFX.clear();
   (f.ceoStaples || []).forEach((s) => stapleFX.attach(s));
-  G.reloadEnd = 0; G.escapeClosed = false;
+  G.reloadEnd = 0; G.escapeClosed = false; G.offChosen = false; G.flashReload = null; me.reloadingFlash = false; me.boostUntil = 0; G.deadHint = false;
   G.sawCeo = false;
   if (changed) story.reset();
   ui.hiding(false); ui.spectate(null); ui.gameover(false);
@@ -226,31 +226,37 @@ net.on('snap', (s) => {
 net.on('inv', (d) => {
   const prev = new Set(G.invIds || []);
   G.invIds = d.items.map((i) => i.id);
-  ui.inventory(d.items);
-  // stapler ammo: loaded in the stapler / loose staples in boxes
-  const st = d.items.find((i) => i.kind === 'stapler');
-  G.stapler = st ? { id: st.id, loaded: st.ammo || 0, reserve: d.items.filter((i) => i.kind === 'staples').reduce((n, i) => n + (i.count || 0), 0) } : null;
+  G.items = d.items;
+  // staplers: staples loaded in each one; spare staples in boxes
+  G.staplers = new Map(d.items.filter((i) => i.kind === 'stapler').map((i) => [i.id, i.ammo || 0]));
+  G.staplesReserve = d.items.filter((i) => i.kind === 'staples').reduce((n, i) => n + (i.count || 0), 0);
   if (d.reloading > 0) { G.reloadStart = performance.now(); G.reloadEnd = G.reloadStart + d.reloading * 1000; audio.play('staplerOpen'); }
-  else if (G.reloadEnd) { G.reloadEnd = 0; if (st) { audio.play('staplerLoad'); story.say('you', st.ammo >= STAPLER.magazine ? 'Loaded. Twenty staples.' : 'Loaded what I had.', { key: 'reloaded', cooldown: 30 }); } }
-  if (G.invReady && st && !prev.has(st.id)) ui.select(d.items.indexOf(st)); // grab it ready to use
+  else if (G.reloadEnd) {
+    G.reloadEnd = 0;
+    const st = d.items.find((i) => i.id === G.reloadStaplerId) || d.items.find((i) => i.kind === 'stapler');
+    if (st) { audio.play('staplerLoad'); story.say('you', st.ammo >= STAPLER.magazine ? 'Loaded. Twenty staples.' : 'Loaded what I had.', { key: 'reloaded', cooldown: 30 }); }
+  }
+  refreshInventory();
   if (G.invReady) {
     for (const it of d.items) {
       if (prev.has(it.id)) continue;
       story.pickup(it);
-      // batteries go straight into the flashlight when it isn't full
-      if (it.kind === 'battery' && me.battery < 95) net.emit('useItem', it.id);
+      // a new stapler goes straight into your hand, ready to use
+      if (it.kind === 'stapler') { const k = ui.items.findIndex((i) => i.id === it.id); if (k >= 0) ui.select(k); }
     }
   }
   G.invReady = true;
 });
 net.on('ammo', (a) => {
   if (a.msg) ui.message(a.msg, 2.5, true);
-  if (a.dry) { audio.play('dry'); if (G.stapler && !G.stapler.reserve) story.say('you', 'Empty. I need more staples.', { key: 'nostaples', cooldown: 25 }); }
+  if (a.dry) { audio.play('dry'); if (G.staplers?.size && !G.staplesReserve) story.say('you', 'Empty. I need more staples.', { key: 'nostaples', cooldown: 25 }); }
 });
 net.on('note', (n) => { ui.openNote(n); audio.play('ui'); story.read(n.id); });
 net.on('keypad', (k) => { input.unlock(); ui.openKeypad(k.digits, (code) => net.emit('interact', { id: k.id, code })); });
 net.on('keypadResult', (r) => { ui.keypadResult(r.ok); if (r.ok) setTimeout(() => lockPointer(), 750); });
-net.on('battery', (d) => { me.battery = d.value; audio.play('insert'); story.batteryIn(); if (!me.flashlight) { me.flashlight = true; audio.play('flashlight'); } });
+net.on('battery', (d) => { me.battery = d.value; audio.play('insert'); story.batteryIn(); if (!me.flashlight && me.flashHand) { me.flashlight = true; audio.play('flashlight'); } G.deadHint = false; });
+net.on('medkit', (d) => { me.health = d.health; me.stamina = PLAYER.maxStamina; me.exhausted = false; story.say('you', pick(['That\'s better. I can breathe again.', 'Patched up. Keep moving.']), { key: 'medkit', cooldown: 20 }); });
+net.on('boost', (d) => { me.boostUntil = performance.now() + d.dur * 1000; me.stamina = PLAYER.maxStamina; me.exhausted = false; story.say('you', pick(['Oh, that\'s strong. I feel like I could run forever.', 'Burnt, bitter... perfect. Let\'s go.']), { key: 'coffee', cooldown: 30 }); });
 net.on('teleport', (d) => { me.pos.set(d.x, d.y ?? me.pos.y, d.z); me.vel.set(0, 0, 0); if (d.yaw !== undefined) me.yaw = d.yaw; });
 net.on('chat', (c) => ui.chatLine(c));
 net.on('ev', handleEvent);
@@ -324,7 +330,7 @@ function handleEvent(e) {
       G.phase = 'finale'; input.enabled = false; input.unlock();
       cutscenes.stop(); ui.prompt(null); ui.markers([]);
       ui.hiding(false); ui.spectate(null); ui.closeModal();
-      world.setDoor('elevator_door', false); me.viewModel.visible = false; me.flashlight = false; me.updateFlashlight(0, {});
+      world.setDoor('elevator_door', false); me.hideHands(); me.flashlight = false; me.updateFlashlight(0, {});
       document.getElementById('intro').classList.add('hidden');
       finale.start(e, G.roster.length <= 1, world);
       break;
@@ -603,30 +609,136 @@ function updateStun(dt) {
 // ---------------------------------------------------------------- the stapler
 const stapleFX = new StapleFX(scene, remotes, audio);
 const music = new Music(audio);
-Object.assign(window.__dbg, { music, stapleFX, G });
+Object.assign(window.__dbg, { music, stapleFX, G, hands: { useHeld, swapHands, reloadHeld, dropHeld, toggleFlashlight } });
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const raycaster = new THREE.Raycaster();
 const STAPLE_BONES = new Set(['Torso', 'Neck', 'Head', 'Arm_R', 'Arm_L', 'Forearm_R', 'Forearm_L', 'Leg_R', 'Leg_L', 'Shin_R', 'Shin_L']);
 
-function tryReload() {
-  const s = G.stapler;
-  if (!s || G.reloadEnd) return;
-  if (s.loaded >= STAPLER.magazine) return ui.message("It's already full.", 2, true);
-  if (!s.reserve) { audio.play('dry'); return ui.message('No staples to load. Find a box of staples.', 2.5, true); }
-  net.emit('reload');
+// ---------------------------------------------------------------- hands
+// Main hand = the selected hotbar slot (right side of the screen). The off hand holds one
+// more item (left side). Everyone starts with the flashlight in the off hand.
+const CONSUMABLE = new Set(['medkit', 'coffee']);
+const mainItem = () => ui.selectedItem() || null;
+const offItem = () => (G.items || []).find((i) => i.id === G.offId) || null;
+const handItem = (which) => (which === 'main' ? mainItem() : offItem());
+
+function refreshInventory() {
+  const items = G.items || [];
+  if (G.offId && !items.some((i) => i.id === G.offId)) G.offId = null;
+  if (!G.offId && !G.offChosen) G.offId = items.find((i) => i.kind === 'flashlight')?.id || null;
+  const sel = ui.selectedItem()?.id;
+  const hot = items.filter((i) => i.id !== G.offId);
+  ui.inventory(hot);
+  const k = sel ? hot.findIndex((i) => i.id === sel) : -1;
+  if (k >= 0 && k !== ui.selected) ui.select(k);
+  ui.offhand(offItem());
+  syncHands();
+}
+
+function syncHands() {
+  const m = mainItem(), o = offItem();
+  me.setHand('main', m);
+  me.setHand('off', o);
+  me.flashHand = m?.kind === 'flashlight' ? 'main' : o?.kind === 'flashlight' ? 'off' : null;
+}
+
+// X: the held item goes to the off hand; what was there comes back to the hotbar.
+function swapHands() {
+  const m = mainItem(), o = offItem();
+  if (!m && !o) return;
+  G.offChosen = true;
+  G.offId = m ? m.id : null;
+  refreshInventory();
+  if (o) { const k = ui.items.findIndex((i) => i.id === o.id); if (k >= 0) ui.select(k); }
+  audio.play('ui');
+  syncHands();
+}
+
+function toggleFlashlight() {
+  if (!me.flashHand) return ui.message('Your flashlight is in your bag. Select it, or press X to hold it in your off hand.', 2.5, true);
+  if (me.reloadingFlash) return;
+  if (me.battery <= 0) {
+    story.noBattery();
+    return ui.message((G.items || []).some((i) => i.kind === 'battery') ? 'Dead battery. Press R to put a new one in.' : 'Dead battery. Find a battery.', 2.5, true);
+  }
+  me.flashlight = !me.flashlight;
+  net.emit('noise', 'flashlight'); audio.play('flashlight');
+}
+
+function useHeld(which) {
+  const it = handItem(which);
+  if (!it || me.hidden && it.kind !== 'flashlight') return;
+  switch (it.kind) {
+    case 'flashlight': toggleFlashlight(); break;
+    case 'stapler': fireStapler(it.id, which); break;
+    case 'battery': reloadFlashlight(); break;
+    case 'staples': tryReload(); break;
+    case 'medkit':
+      if (me.health >= PLAYER.maxHealth && me.stamina >= PLAYER.maxStamina - 1) return ui.message("You're not hurt, and you've got your breath.", 2, true);
+      me.useHandAnim(which); audio.play('medkit'); net.emit('useItem', it.id); break;
+    case 'coffee':
+      me.useHandAnim(which); net.emit('useItem', it.id); break;
+    default: ui.message('Use it on something nearby with E.', 1.6, true);
+  }
+}
+
+// R: reload whatever needs it in your hands (main hand first).
+function reloadHeld() {
+  for (const which of ['main', 'off']) {
+    const it = handItem(which);
+    if (it?.kind === 'stapler') return tryReload(it.id);
+    if (it?.kind === 'flashlight') return reloadFlashlight();
+  }
+  ui.message('Hold the stapler or the flashlight to reload it.', 2, true);
+}
+
+// Swapping batteries: about a second and a half with the light off, then the server
+// takes the battery and the flashlight is full again.
+function reloadFlashlight() {
+  if (G.flashReload) return;
+  if (!me.flashHand) return ui.message('Hold your flashlight to change its battery.', 2, true);
+  if (me.battery >= PLAYER.maxBattery - 1) return ui.message("The battery's still full.", 2, true);
+  const bat = (G.items || []).find((i) => i.kind === 'battery');
+  if (!bat) { audio.play('dry'); return ui.message('No spare batteries. Find one.', 2.5, true); }
+  G.flashReload = { start: performance.now(), end: performance.now() + 1500, battery: bat.id };
+  me.reloadingFlash = true;
+  audio.play('staplerOpen');
+}
+function updateFlashReload() {
+  const r = G.flashReload;
+  if (!r || performance.now() < r.end) return;
+  G.flashReload = null;
+  me.reloadingFlash = false;
+  if ((G.items || []).some((i) => i.id === r.battery)) net.emit('useItem', r.battery);
+}
+
+function dropHeld() {
+  const it = mainItem();
+  if (!it) return;
+  if (it.kind === 'flashlight') return ui.message("You can't drop your flashlight.", 2, true);
+  net.emit('dropItem', it.id);
+}
+
+function tryReload(id) {
+  const st = id || [...(G.staplers || new Map()).keys()][0];
+  if (!st || G.reloadEnd) return;
+  if ((G.staplers.get(st) || 0) >= STAPLER.magazine) return ui.message("It's already full.", 2, true);
+  if (!G.staplesReserve) { audio.play('dry'); return ui.message('No staples to load. Find a box of staples.', 2.5, true); }
+  G.reloadStaplerId = st;
+  net.emit('reload', st);
 }
 
 // The server decides hits. Our own raycast against his model only says which bone the
 // staple should stick to (and where), so it lands on the same spot for everyone.
-function fireStapler() {
-  const s = G.stapler;
-  if (!s) return;
+function fireStapler(id, which) {
+  const loaded = G.staplers?.get(id);
+  if (loaded === undefined) return;
   if (G.reloadEnd) return ui.message('Reloading...', 1.2, true);
   const now = performance.now();
   if (now - (G.lastFire || 0) < STAPLER.fireInterval * 1000) return;
-  if (s.loaded <= 0) {
+  if (loaded <= 0) {
     audio.play('dry');
-    ui.message(s.reserve ? 'Empty — press R to reload.' : 'Out of staples. Find a box of staples.', 2, true);
+    ui.message(G.staplesReserve ? 'Empty — press R to reload.' : 'Out of staples. Find a box of staples.', 2, true);
     return;
   }
   G.lastFire = now;
@@ -648,30 +760,53 @@ function fireStapler() {
       break;
     }
   }
-  net.emit('fire', { id: s.id, dir: dir.toArray().map((v) => +v.toFixed(4)), hit });
-  s.loaded--; // the server's inventory update follows right away
+  net.emit('fire', { id, dir: dir.toArray().map((v) => +v.toFixed(4)), hit });
+  G.staplers.set(id, loaded - 1); // the server's inventory update follows right away
   audio.play('staple');
-  if (me.staplerVM) me.staplerVM.kick = 1;
+  me.kickHand(which);
   me.shake = Math.max(me.shake, 0.08);
 }
 
 function updateAmmoHud() {
-  const s = G.stapler, el = $('ammo');
-  const show = !!s && G.phase === 'playing' && me.alive;
+  const el = $('ammo');
+  const m = mainItem(), o = offItem();
+  // show the stapler you're holding (main hand first), else the first one you carry
+  const which = m?.kind === 'stapler' ? 'main' : o?.kind === 'stapler' ? 'off' : null;
+  const sid = which ? handItem(which).id : [...(G.staplers || new Map()).keys()][0];
+  const loaded = sid ? G.staplers.get(sid) : 0;
+  const show = !!sid && G.phase === 'playing' && me.alive;
   el.classList.toggle('hidden', !show);
+  const now = performance.now();
   const reloading = G.reloadEnd > 0;
-  const k = reloading ? Math.min(1, (performance.now() - G.reloadStart) / (G.reloadEnd - G.reloadStart)) : -1;
-  me.updateStapler(G.dt || 0, ui.selectedItem()?.kind === 'stapler' && G.phase === 'playing' && !cutscenes.active, k);
+  const k = reloading ? Math.min(1, (now - G.reloadStart) / (G.reloadEnd - G.reloadStart)) : -1;
+  // hand animations: stapler reload in whichever hand holds that stapler, battery swap for the flashlight
+  const reload = {};
+  for (const w of ['main', 'off']) {
+    const it = handItem(w);
+    if (reloading && it?.id === G.reloadStaplerId) reload[w] = k;
+    if (G.flashReload && it?.kind === 'flashlight') reload[w] = Math.min(1, (now - G.flashReload.start) / (G.flashReload.end - G.flashReload.start));
+  }
+  me.updateHands(G.dt || 0, { reload });
+  // coffee timer
+  const left = Math.max(0, me.boostUntil - now) / 1000;
+  $('boost').classList.toggle('hidden', !(left > 0 && me.alive && G.phase === 'playing'));
+  if (left > 0) $('boost-fill').style.width = `${(left / COFFEE.duration) * 100}%`;
+  // dead flashlight in hand: say how to fix it, once
+  if (me.flashHand && me.battery <= 0 && !G.deadHint && me.alive) {
+    G.deadHint = true;
+    ui.message((G.items || []).some((i) => i.kind === 'battery') ? 'Flashlight battery is dead — press R to load a new one.' : 'Flashlight battery is dead. Find a battery.', 4, true);
+  }
   if (!show) return;
-  $('ammo-loaded').textContent = s.loaded;
-  $('ammo-reserve').textContent = s.reserve;
-  el.classList.toggle('empty', s.loaded <= 0);
+  $('ammo-loaded').textContent = loaded;
+  $('ammo-reserve').textContent = G.staplesReserve || 0;
+  el.classList.toggle('empty', loaded <= 0);
   el.classList.toggle('reloading', reloading);
-  el.classList.toggle('dim', ui.selectedItem()?.kind !== 'stapler' && !reloading);
+  el.classList.toggle('dim', !which && !reloading);
   $('reload-fill').style.width = `${Math.round(Math.max(0, k) * 100)}%`;
-  $('ammo-hint').textContent = reloading ? `RELOADING · ${Math.max(0, (G.reloadEnd - performance.now()) / 1000).toFixed(1)}s`
-    : ui.selectedItem()?.kind !== 'stapler' ? `select slot ${ui.items.findIndex((i) => i.kind === 'stapler') + 1} to use`
-      : s.loaded <= 0 ? (s.reserve ? 'EMPTY · press R to reload' : 'EMPTY · find a box of staples') : 'left click to fire';
+  const click = which === 'off' ? 'right click' : 'left click';
+  $('ammo-hint').textContent = reloading ? `RELOADING · ${Math.max(0, (G.reloadEnd - now) / 1000).toFixed(1)}s`
+    : !which ? `select slot ${ui.items.findIndex((i) => i.kind === 'stapler') + 1} to use`
+      : loaded <= 0 ? (G.staplesReserve ? 'EMPTY · press R to reload' : 'EMPTY · find a box of staples') : `${click} to fire`;
 }
 
 // ---------------------------------------------------------------- music
@@ -709,19 +844,21 @@ function frame(now) {
     me.update(dt, NEUTRAL, G.grid, doorOpen);
     ui.prompt(null);
   } else if (me.alive && !G.travelling) {
-    if (inp.toggleFlash) {
-      if (me.battery <= 0) story.noBattery();
-      net.emit('noise', 'flashlight'); audio.play('flashlight');
-    }
-    me.update(dt, inp, G.grid, doorOpen);
-    // inventory
+    if (inp.toggleFlash) toggleFlashlight();
+    me.update(dt, { ...inp, toggleFlash: false }, G.grid, doorOpen);
+    // hands & inventory
     if (inp.slot !== null) ui.select(inp.slot);
     if (inp.wheel) ui.select((ui.selected + inp.wheel + 8) % 8);
-    if (inp.use && ui.selectedItem()) net.emit('useItem', ui.selectedItem().id);
-    const equipped = ui.selectedItem()?.kind === 'stapler';
-    if (inp.reload && G.stapler) tryReload();
-    if (inp.fire && equipped && !me.hidden) fireStapler();
-    if (inp.drop && ui.selectedItem()) net.emit('dropItem', ui.selectedItem().id);
+    syncHands();
+    if (inp.swap) swapHands();
+    if (inp.useMain) useHeld('main');
+    if (inp.useOff) {
+      // right click drinks / heals with what's in your hand, otherwise uses the off hand
+      if (CONSUMABLE.has(mainItem()?.kind)) useHeld('main'); else useHeld('off');
+    }
+    if (inp.reload) reloadHeld();
+    if (inp.drop) dropHeld();
+    updateFlashReload();
     // interaction
     if (me.hidden) {
       ui.prompt('Leave hiding spot');
@@ -787,7 +924,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 function updateCamera(dt, t) {
-  if (cutscenes.applyCamera(dt)) { me.viewModel.visible = false; return; }
+  if (cutscenes.applyCamera(dt)) { me.hideHands(); return; }
   if (me.alive && me.hidden) {
     const pr = world.props.get(me.hidden);
     const local = pr?.prop?.userData.hideCam;
@@ -795,12 +932,12 @@ function updateCamera(dt, t) {
       _v.copy(local); pr.group.localToWorld(_v);
       camera.position.copy(_v);
       camera.rotation.set(me.pitch, me.yaw + Math.PI, 0, 'YXZ');
-      me.viewModel.visible = false;
+      me.hideHands();
       return;
     }
   }
   if (me.alive) { me.applyCamera(dt, t); return; }
-  me.viewModel.visible = false;
+  me.hideHands();
   // death cam: stare into the CEO's face
   if (G.deathCam && G.deathCam.t < 1.5) G.deathCam.t += dt;
   if (G.deathCam && G.deathCam.t < 1.5 && remotes.ceoRig) {

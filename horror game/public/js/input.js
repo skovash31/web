@@ -12,7 +12,7 @@ export class Input {
     this.mouseButtons = new Set();
     window.addEventListener('keydown', (e) => {
       if (this.typing) return;
-      if (this.enabled && (e.ctrlKey || ['Space', 'Tab', 'KeyS', 'KeyD', 'KeyW', 'KeyF', 'KeyJ', 'KeyG', 'KeyQ'].includes(e.code))) e.preventDefault();
+      if (this.enabled && (e.ctrlKey || ['Space', 'Tab', 'KeyS', 'KeyD', 'KeyW', 'KeyF', 'KeyJ', 'KeyG', 'KeyQ', 'KeyX', 'KeyR'].includes(e.code))) e.preventDefault();
       if (!this.keys.has(e.code)) this.pressed.add(e.code);
       this.keys.add(e.code);
     });
@@ -51,10 +51,11 @@ export class Input {
       crouch: active && (k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyC')),
       jump: active && p.has('Space'),
       interact: active && p.has('KeyE'),
-      toggleFlash: active && (p.has('KeyF') || p.has('Mouse2')),
-      use: active && p.has('KeyQ'),
-      drop: active && p.has('KeyG'),
-      fire: active && p.has('Mouse0'),
+      toggleFlash: active && p.has('KeyF'),
+      useMain: active && p.has('Mouse0'),   // left click: use what's in your main hand
+      useOff: active && p.has('Mouse2'),    // right click: use your off hand (or drink / heal)
+      drop: active && (p.has('KeyQ') || p.has('KeyG')),
+      swap: active && p.has('KeyX'),        // put the held item in your off hand
       reload: active && p.has('KeyR'),
       slot: null,
       wheel: active ? this.wheel : 0,
