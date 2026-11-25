@@ -434,22 +434,28 @@ export class CEO {
   }
 
   // ---------------------------------------------------------------- flashlight stun
-  // Height of his eyes above the floor for the current form / pose.
-  eyeHeight() {
-    if (this.grid.cell(toTile(this.x), toTile(this.z)) === C.VENT) return 0.75;
-    return this.form === 'monster' ? 2.1 : 1.62;
+  // Where his eyes are for the current form / pose. The monster model is hunched: his head
+  // juts out in front of his body (further when he runs).
+  eyeHeight() { return this.eyePoint().y; }
+  eyePoint() {
+    if (this.grid.cell(toTile(this.x), toTile(this.z)) === C.VENT) return { x: this.x + Math.sin(this.yaw) * 1.2, z: this.z + Math.cos(this.yaw) * 1.2, y: 0.75 };
+    if (this.form !== 'monster') return { x: this.x + Math.sin(this.yaw) * 0.08, z: this.z + Math.cos(this.yaw) * 0.08, y: 1.62 };
+    const run = this.anim === 'run';
+    const f = run ? 0.95 : 0.75;
+    return { x: this.x + Math.sin(this.yaw) * f, z: this.z + Math.cos(this.yaw) * f, y: run ? 2.12 : 2.27 };
   }
 
   // Is this player's flashlight beam pointed straight into his eyes (and can he see it)?
   beamInEyes(p) {
     if (!p.flashlight || p.hidden || !p.alive) return false;
-    const ex = this.x, ez = this.z, ey = this.eyeHeight();
+    const eye = this.eyePoint();
+    const ex = eye.x, ez = eye.z, ey = eye.y;
     const py = (p.y || 0) + (p.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand);
     const dx = ex - p.x, dy = ey - py, dz = ez - p.z;
     const flat = Math.hypot(dx, dz);
     if (flat > BLIND.range || flat < 0.6) return false;
     // he has to be facing the light for it to reach his eyes
-    if (Math.abs(wrap(Math.atan2(p.x - ex, p.z - ez) - this.yaw)) > 1.35) return false;
+    if (Math.abs(wrap(Math.atan2(p.x - this.x, p.z - this.z) - this.yaw)) > 1.35) return false;
     if (!this.grid.lineOfSight(p.x, p.z, ex, ez, this.doorOpen)) return false;
     const d = Math.hypot(flat, dy);
     const cp = Math.cos(p.pitch || 0);

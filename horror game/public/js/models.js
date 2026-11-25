@@ -7,7 +7,7 @@ const loader = new GLTFLoader();
 const store = {};
 
 export async function loadModels(onProgress) {
-  const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb'], ['boss', 'models/boss.glb']];
+  const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb'], ['boss', 'models/boss.glb'], ['car', 'models/car.glb']];
   let done = 0;
   await Promise.all(list.map(([k, url]) => new Promise((res) => {
     loader.load(url, (g) => { store[k] = g.scene; done++; onProgress?.(done / list.length); res(); }, undefined, (e) => { console.warn('model failed', url, e); store[k] = null; done++; res(); });
@@ -54,6 +54,30 @@ export function makeFlashlight() {
   root.userData.lightOrigin = find(root, 'LightOrigin');
   root.userData.setOn = (on) => { if (lens) lens.emissiveIntensity = on ? 2.2 : 0; };
   return root;
+}
+
+// The provided car.glb (front faces +Z, wheels are separate nodes, headlight origins
+// marked). Its cabin is a closed shell behind the glass: the shell stays single-sided so
+// it vanishes from the driver's seat, and the glass is made see-through (tinted). Returns null if the model failed to load.
+export function makeCar() {
+  const src = store.car;
+  if (!src) return null;
+  const root = src.clone(true);
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    o.material = o.material.clone();
+    const n = o.material.name;
+    if (n === 'Glass') Object.assign(o.material, { transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide });
+    if (n === 'Headlight' || n === 'Taillight') o.userData.lamp = o.material;
+  });
+  return {
+    root,
+    wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'].map((w) => find(root, w)).filter(Boolean),
+    front: ['Wheel_FL', 'Wheel_FR'].map((w) => find(root, w)).filter(Boolean),
+    headlightOrigins: ['HeadlightOrigin_L', 'HeadlightOrigin_R'].map((w) => find(root, w)).filter(Boolean),
+    lamps: (() => { const l = []; root.traverse((o) => { if (o.userData.lamp) l.push(o.userData.lamp); }); return l; })(),
+  };
 }
 
 // ---------------------------------------------------------------- employees
@@ -164,6 +188,11 @@ export class HumanRig {
 }
 
 // ---------------------------------------------------------------- the CEO
+// monster.glb: a hunched, jointed rig (Torso > Neck > Head, Arm > Forearm, Leg > Shin).
+// Every joint keeps its authored rest pose; animation is layered on top of it.
+const JOINTS = ['Torso', 'Neck', 'Head', 'Arm_R', 'Arm_L', 'Forearm_R', 'Forearm_L', 'Leg_R', 'Leg_L', 'Shin_R', 'Shin_L'];
+const _eyeLocal = new THREE.Vector3(0, 0.27, 0.19); // between the eyes, in Head space
+
 export class MonsterRig {
   constructor() {
     this.root = new THREE.Group();
@@ -173,18 +202,25 @@ export class MonsterRig {
       this.model = prepare(src.clone(true));
       this.model.scale.setScalar(1.06);
       this.root.add(this.model);
-      for (const n of ['Torso', 'Neck', 'Head', 'Arm_R', 'Arm_L', 'Leg_R', 'Leg_L']) {
+      for (const n of JOINTS) {
         const o = find(this.model, n);
         this[n] = o;
         if (o) this.base[n] = o.quaternion.clone();
       }
       this.model.traverse((o) => {
-        if (o.isMesh && o.material.name === 'Pupil') { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0xff3020); o.material.emissiveIntensity = 0.6; this.pupil = o.material; }
-        if (o.isMesh && (o.material.name === 'WhiteSkin' || o.material.name === 'HeadWhite')) { o.material = o.material.clone(); o.material.roughness = 0.55; o.material.color.set(0xe8e4dc); }
+        if (!o.isMesh) return;
+        // glowing pupils: you can find his eyes with the flashlight, and they find you
+        if (o.material.name === 'Pupil') { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0xff3020); o.material.emissiveIntensity = 0.6; this.pupil = o.material; }
       });
+      // his authored legs are bent: measure where the soles really are so he stands on the floor
+      this.model.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(this.model);
+      this.footOffset = -box.min.y;
+      this.height = box.max.y - box.min.y;
     } else {
       const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.6, 4, 8), new THREE.MeshStandardMaterial({ color: 0xeeeeee }));
       m.position.y = 1.2; this.root.add(m);
+      this.footOffset = 0; this.height = 2.4;
     }
     this.phase = 0;
     this.t = 0;
@@ -211,15 +247,16 @@ export class MonsterRig {
     this.t += dt;
     const t = this.t;
     const moving = speed > 0.2;
-    this.phase += dt * (moving ? 2.2 + speed * 1.2 : 0);
-    const s = Math.sin(this.phase);
+    const run = anim === 'run';
+    // long, loping strides: cadence grows slower than speed
+    this.phase += dt * (moving ? 2.0 + speed * 1.05 : 0);
+    const s = Math.sin(this.phase), c = Math.cos(this.phase);
     // footstep event on each leg plant
     const sign = Math.sign(s);
     if (moving && sign !== this.lastStepSign && this.stepCallback) this.stepCallback(speed);
     this.lastStepSign = sign;
-    const run = anim === 'run';
-    const amp = run ? 0.75 : 0.42;
-    const leanTarget = run ? 0.38 : anim === 'search' ? 0.1 : anim === 'roar' ? -0.35 : anim === 'blind' ? -0.3 : 0.05;
+    const amp = run ? 0.7 : 0.4;
+    const leanTarget = run ? 0.42 : anim === 'search' ? 0.12 : anim === 'roar' ? -0.35 : anim === 'blind' ? -0.3 : anim === 'kill' ? 0.25 : 0.06;
     this.lean += (leanTarget - this.lean) * Math.min(1, dt * 5);
     // random unnatural head twitches
     this.twitch -= dt;
@@ -227,40 +264,63 @@ export class MonsterRig {
       this.twitch = 0.4 + Math.random() * (run ? 0.8 : 2.2);
       this.twitchTarget.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.9, (Math.random() - 0.5) * 0.8);
     }
-    this.twitchCur.x += (this.twitchTarget.x - this.twitchCur.x) * Math.min(1, dt * 18);
-    this.twitchCur.y += (this.twitchTarget.y - this.twitchCur.y) * Math.min(1, dt * 18);
-    this.twitchCur.z += (this.twitchTarget.z - this.twitchCur.z) * Math.min(1, dt * 18);
+    for (const k of ['x', 'y', 'z']) this.twitchCur[k] += (this.twitchTarget[k] - this.twitchCur[k]) * Math.min(1, dt * 18);
 
+    // arms: shoulder swing + elbow bend (positive fore* = elbow flexes more)
     let armRx = moving ? -s * amp * 0.8 : Math.sin(t * 0.9) * 0.05;
     let armLx = moving ? s * amp * 0.8 : Math.sin(t * 0.9 + 1) * 0.05;
     let armRz = 0.05, armLz = -0.05;
+    let foreR = moving ? Math.max(0, s) * 0.35 : Math.sin(t * 1.3) * 0.06;
+    let foreL = moving ? Math.max(0, -s) * 0.35 : Math.sin(t * 1.3 + 2) * 0.06;
     let headX = this.twitchCur.x * 0.6, headY = this.twitchCur.y, headZ = this.twitchCur.z;
-    if (anim === 'search') { headY = Math.sin(t * 1.6) * 0.9; armRx = 0.1; }
-    if (anim === 'open' || anim === 'check') { armRx = -1.5 + Math.sin(t * 10) * 0.1; armLx = -1.3; }
-    if (anim === 'roar') { armRz = 0.9; armLz = -0.9; armRx = -0.5; armLx = -0.5; headX = -0.6; headZ = Math.sin(t * 30) * 0.15; }
-    if (anim === 'kill') { armRx = -2.2 + Math.sin(t * 14) * 0.3; armLx = -2.0 + Math.cos(t * 14) * 0.3; headX = 0.3 + Math.sin(t * 25) * 0.2; }
-    if (anim === 'burn') { armRx = -2.6 + Math.sin(t * 17) * 0.6; armLx = -2.4 + Math.cos(t * 19) * 0.6; headX = -0.8 + Math.sin(t * 31) * 0.3; headZ = Math.sin(t * 23) * 0.4; }
-    if (anim === 'blind') { armRx = -2.5 + Math.sin(t * 13) * 0.2; armLx = -2.4 + Math.cos(t * 11) * 0.2; armRz = 0.45; armLz = -0.45; headX = 0.35 + Math.sin(t * 21) * 0.15; headY = Math.sin(t * 7) * 0.6; headZ = Math.sin(t * 17) * 0.25; }
-    if (run) { armRx = -0.9 - s * 0.5; armLx = -0.9 + s * 0.5; } // reaching forward while chasing
+    if (anim === 'search') { headY = Math.sin(t * 1.6) * 0.9; armRx = 0.1; foreR = 0.2; }
+    if (anim === 'open' || anim === 'check') { armRx = -1.4 + Math.sin(t * 10) * 0.1; armLx = -1.2; foreR = -0.3; foreL = -0.5 + Math.sin(t * 8) * 0.2; }
+    if (anim === 'roar') { armRz = 0.9; armLz = -0.9; armRx = -0.5; armLx = -0.5; foreR = -0.6; foreL = -0.6; headX = -0.6; headZ = Math.sin(t * 30) * 0.15; }
+    if (anim === 'kill') { armRx = -2.0 + Math.sin(t * 14) * 0.35; armLx = -1.8 + Math.cos(t * 14) * 0.35; foreR = -0.4 + Math.sin(t * 14) * 0.5; foreL = -0.4 + Math.cos(t * 14) * 0.5; headX = 0.35 + Math.sin(t * 25) * 0.2; }
+    if (anim === 'burn') { armRx = -2.6 + Math.sin(t * 17) * 0.6; armLx = -2.4 + Math.cos(t * 19) * 0.6; foreR = Math.sin(t * 13) * 0.8; foreL = Math.cos(t * 11) * 0.8; headX = -0.8 + Math.sin(t * 31) * 0.3; headZ = Math.sin(t * 23) * 0.4; }
+    // blinded: claws thrown up over his face, head shaking
+    if (anim === 'blind') { armRx = -2.3 + Math.sin(t * 13) * 0.15; armLx = -2.2 + Math.cos(t * 11) * 0.15; armRz = 0.5; armLz = -0.5; foreR = 1.1; foreL = 1.1; headX = 0.4 + Math.sin(t * 21) * 0.15; headY = Math.sin(t * 7) * 0.6; headZ = Math.sin(t * 17) * 0.25; }
+    // chasing: arms thrust forward, claws reaching
+    if (run) { armRx = -1.0 - s * 0.45; armLx = -1.0 + s * 0.45; foreR = -0.35 + Math.max(0, s) * 0.3; foreL = -0.35 + Math.max(0, -s) * 0.3; }
+
+    // legs: hip swing; the knee folds while the leg swings through and straightens to plant
+    const kneeAmp = run ? 0.95 : 0.6;
+    let legR = s * amp, legL = -s * amp;
+    let shinR = moving ? Math.max(0, -c) * kneeAmp : 0, shinL = moving ? Math.max(0, c) * kneeAmp : 0;
+    if (anim === 'blind') { legR = -0.15; legL = 0.25; shinR = 0.3; shinL = 0.15; }
+    if (anim === 'kill' || anim === 'roar') { shinR = 0.25; shinL = 0.25; legR = -0.15; legL = -0.15; } // braced, crouching
+
     // crawling through a vent: body pitched forward, clawing along
     this.crawlAmt += ((this.crawl ? 1 : 0) - this.crawlAmt) * Math.min(1, dt * 6);
     const cr = this.crawlAmt;
-    if (cr > 0.01) { armRx = armRx * (1 - cr) + cr * (-1.6 - s * 0.6); armLx = armLx * (1 - cr) + cr * (-1.6 + s * 0.6); }
+    if (cr > 0.01) {
+      armRx = armRx * (1 - cr) + cr * (-1.5 - s * 0.6); armLx = armLx * (1 - cr) + cr * (-1.5 + s * 0.6);
+      foreR = foreR * (1 - cr) + cr * 0.6; foreL = foreL * (1 - cr) + cr * 0.6;
+      shinR = shinR * (1 - cr) + cr * 1.2; shinL = shinL * (1 - cr) + cr * 1.2;
+    }
 
-    this.rot('Leg_R', s * amp, 0, 0);
-    this.rot('Leg_L', -s * amp, 0, 0);
+    this.rot('Leg_R', legR, 0, 0);
+    this.rot('Leg_L', legL, 0, 0);
+    this.rot('Shin_R', shinR, 0, 0);
+    this.rot('Shin_L', shinL, 0, 0);
     this.rot('Arm_R', armRx, 0, armRz);
     this.rot('Arm_L', armLx, 0, armLz);
-    this.rot('Torso', this.lean + (moving ? Math.abs(s) * 0.05 : Math.sin(t * 1.2) * 0.02), moving ? s * 0.12 : 0, 0);
+    this.rot('Forearm_R', -foreR, 0, 0);
+    this.rot('Forearm_L', -foreL, 0, 0);
+    this.rot('Torso', this.lean + (moving ? Math.abs(s) * 0.05 : Math.sin(t * 1.2) * 0.02), moving ? s * 0.14 : 0, moving ? c * 0.04 : 0);
     this.rot('Neck', this.lean * -0.5, 0, 0);
-    this.rot('Head', headX, headY, headZ);
-    this.model.position.y = (moving ? Math.abs(Math.cos(this.phase)) * (run ? 0.09 : 0.05) : Math.sin(t * 1.2) * 0.01) + cr * 0.2;
+    this.rot('Head', headX - this.lean * 0.3, headY, headZ);
+    const bob = moving ? Math.abs(c) * (run ? 0.1 : 0.05) : Math.sin(t * 1.2) * 0.01;
+    // folded knees lower the hips: sink the body so the soles stay on the floor
+    const sink = (Math.max(shinR, shinL) * 0.12 + (anim === 'kill' || anim === 'roar' ? 0.06 : 0)) * (1 - cr);
+    this.model.position.y = (this.footOffset || 0) + bob - sink + cr * 0.2;
     this.model.rotation.x = cr * 1.3;
-    if (this.pupil) this.pupil.emissiveIntensity = anim === 'blind' ? 0.05 : run ? 1.5 : 0.5;
+    if (this.pupil) this.pupil.emissiveIntensity = anim === 'blind' ? 0.05 : run ? 1.6 : 0.6;
   }
 
+  // World position of his eyes (what the flashlight stun and the death camera aim at).
   headWorldPos(out) {
-    if (this.Head) return this.Head.getWorldPosition(out).add(_v.set(0, 0.25, 0));
+    if (this.Head) return this.Head.localToWorld(out.copy(_eyeLocal));
     return out.copy(this.root.position).add(_v.set(0, 2.2, 0));
   }
 }

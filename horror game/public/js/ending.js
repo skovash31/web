@@ -2,6 +2,7 @@
 // night, get into your car and drive home. Entirely in-engine and procedurally built.
 import * as THREE from 'three';
 import { tex, textTexture } from './textures.js';
+import { makeCar } from './models.js';
 
 const _v = new THREE.Vector3(), _q = new THREE.Vector3();
 const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
@@ -99,33 +100,46 @@ export class Finale {
     const car = this.car = new THREE.Group();
     car.position.set(3, 0, 10.4);
     s.add(car);
+    const model = makeCar();
     const paint = std({ color: 0x8a2424, metalness: 0.4, roughness: 0.35 });
-    add(new THREE.BoxGeometry(1.9, 0.62, 4.4), paint, 0, 0.6, 0, car);
     const cabinMat = std({ color: 0x0c0f14, metalness: 0.3, roughness: 0.15, transparent: true, opacity: 0.55 });
-    add(new THREE.BoxGeometry(1.72, 0.55, 2.1), cabinMat, 0, 1.18, -0.25, car);
-    add(new THREE.BoxGeometry(1.74, 0.05, 2.0), paint, 0, 1.46, -0.25, car); // roof
-    for (const x of [-0.84, 0.84]) add(new THREE.BoxGeometry(0.06, 0.55, 0.08), paint, x, 1.18, 0.78, car); // A-pillars
-    const wheelG = new THREE.CylinderGeometry(0.34, 0.34, 0.25, 16);
-    for (const [x, z] of [[-0.9, 1.4], [0.9, 1.4], [-0.9, -1.4], [0.9, -1.4]]) { const w = add(wheelG, std({ color: 0x111111 }), x, 0.34, z, car); w.rotation.z = Math.PI / 2; }
-    for (const x of [-0.65, 0.65]) {
-      add(new THREE.BoxGeometry(0.4, 0.14, 0.05), std({ color: 0xffffff, emissive: 0xfff4d0, emissiveIntensity: 1.5 }), x, 0.7, 2.21, car);
-      add(new THREE.BoxGeometry(0.4, 0.12, 0.05), std({ color: 0x400000, emissive: 0xff1010, emissiveIntensity: 1.2 }), x, 0.72, -2.21, car);
+    if (model) {
+      // the provided car.glb
+      car.add(model.root);
+      this.carModel = model;
+      model.lamps.forEach((m) => { m.userData.on = m.emissiveIntensity ?? 1; m.emissiveIntensity = 0; });
+    } else {
+      add(new THREE.BoxGeometry(1.9, 0.62, 4.4), paint, 0, 0.6, 0, car);
+      add(new THREE.BoxGeometry(1.72, 0.55, 2.1), cabinMat, 0, 1.18, -0.25, car);
+      add(new THREE.BoxGeometry(1.74, 0.05, 2.0), paint, 0, 1.46, -0.25, car); // roof
+      for (const x of [-0.84, 0.84]) add(new THREE.BoxGeometry(0.06, 0.55, 0.08), paint, x, 1.18, 0.78, car); // A-pillars
+      const wheelG = new THREE.CylinderGeometry(0.34, 0.34, 0.25, 16);
+      for (const [x, z] of [[-0.9, 1.4], [0.9, 1.4], [-0.9, -1.4], [0.9, -1.4]]) { const w = add(wheelG, std({ color: 0x111111 }), x, 0.34, z, car); w.rotation.z = Math.PI / 2; }
+      for (const x of [-0.65, 0.65]) {
+        add(new THREE.BoxGeometry(0.4, 0.14, 0.05), std({ color: 0xffffff, emissive: 0xfff4d0, emissiveIntensity: 1.5 }), x, 0.7, 2.21, car);
+        add(new THREE.BoxGeometry(0.4, 0.12, 0.05), std({ color: 0x400000, emissive: 0xff1010, emissiveIntensity: 1.2 }), x, 0.72, -2.21, car);
+      }
     }
     // interior
-    add(new THREE.BoxGeometry(1.6, 0.25, 0.4), std({ color: 0x15161a, roughness: 0.8 }), 0, 0.95, 0.7, car);
+    add(new THREE.BoxGeometry(1.6, 0.18, 0.4), std({ color: 0x15161a, roughness: 0.8 }), 0, 0.9, 0.72, car);
     this.dash = std({ color: 0x0a0a0a, emissive: 0x30c0ff, emissiveIntensity: 0 });
-    add(new THREE.BoxGeometry(0.26, 0.06, 0.02), this.dash, 0.42, 1.03, 0.86, car);
-    const wheel = add(new THREE.TorusGeometry(0.17, 0.022, 8, 20), std({ color: 0x111111 }), 0.42, 0.96, 0.62, car);
+    add(new THREE.BoxGeometry(0.12, 0.03, 0.01), this.dash, 0.42, 0.95, 0.6, car);
+    const wheel = add(new THREE.TorusGeometry(0.17, 0.022, 8, 20), std({ color: 0x111111 }), 0.42, 0.98, 0.5, car);
     wheel.rotation.x = -0.4;
     this.steer = wheel;
     // driver door (on the car's left = +x side), hinged at the front
     this.doorPivot = new THREE.Group(); this.doorPivot.position.set(0.97, 0.55, 0.65); car.add(this.doorPivot);
-    add(new THREE.BoxGeometry(0.06, 0.62, 1.15), paint, 0, 0, -0.57, this.doorPivot);
-    add(new THREE.BoxGeometry(0.04, 0.5, 1.0), cabinMat, 0, 0.6, -0.55, this.doorPivot);
+    if (!model) {
+      add(new THREE.BoxGeometry(0.06, 0.62, 1.15), paint, 0, 0, -0.57, this.doorPivot);
+      add(new THREE.BoxGeometry(0.04, 0.5, 1.0), cabinMat, 0, 0.6, -0.55, this.doorPivot);
+    }
     // headlights
-    this.heads = [-0.6, 0.6].map((x) => {
+    car.updateMatrixWorld(true);
+    const origins = model?.headlightOrigins.length === 2 ? model.headlightOrigins : null;
+    this.heads = [-0.6, 0.6].map((x, i) => {
       const l = new THREE.SpotLight(0xfff4d0, 0, 45, 0.45, 0.5, 1.2);
-      l.position.set(x, 0.7, 2.3); car.add(l);
+      if (origins) { origins[i].getWorldPosition(l.position); car.worldToLocal(l.position); l.position.z += 0.1; x = l.position.x; } else l.position.set(x, 0.7, 2.3);
+      car.add(l);
       l.target.position.set(x * 0.6, 0, 14); car.add(l.target);
       return l;
     });
@@ -218,7 +232,7 @@ export class Finale {
     } else if (te < 12.0) {
       // climb in
       const k = ease((te - 10.6) / 1.2);
-      const seat = this.car.localToWorld(_q.set(0.42, 1.2, -0.2));
+      const seat = this.car.localToWorld(_q.set(0.42, 1.3, -0.2));
       cam.position.set(lerp(5.3, seat.x, k), lerp(1.65, seat.y, k), lerp(8.4, seat.z, k));
       cam.lookAt(lerp(3.5, seat.x, k), 1.15, lerp(10.4, seat.z + 10, k));
       if (te > 11.6) this.doorPivot.rotation.y = -1.1 * (1 - ease((te - 11.6) / 0.35));
@@ -226,14 +240,22 @@ export class Finale {
       // in the car
       if (te > 12.0) this.once('dclose', () => { this.doorPivot.rotation.y = 0; this.audio.play('carDoor'); });
       if (te > 12.6) this.once('keys', () => this.audio.play('keys'));
-      if (te > 13.1) this.once('engine', () => { this.audio.engine(true); this.dash.emissiveIntensity = 0.8; this.heads.forEach((h) => { h.intensity = 45; }); });
+      if (te > 13.1) this.once('engine', () => { this.audio.engine(true); this.dash.emissiveIntensity = 0.35; this.heads.forEach((h) => { h.intensity = 45; }); this.carModel?.lamps.forEach((m) => { m.emissiveIntensity = m.userData.on; }); });
       if (te > 13.5) this.say('o4', 'you', "Let's go home.");
       const p = this.carPose(te);
       this.car.position.set(p.x, 0, p.z);
       this.car.rotation.y = p.yaw;
       this.audio.engine(true, Math.min(1, p.v / 16));
+      if (this.carModel) {
+        // roll the wheels by the distance actually travelled, and steer the front ones
+        const moved = this.lastCarPos ? Math.hypot(p.x - this.lastCarPos.x, p.z - this.lastCarPos.z) : 0;
+        this.lastCarPos = { x: p.x, z: p.z };
+        this.wheelSpin = (this.wheelSpin || 0) + moved / 0.34;
+        const steer = te > 17.6 && te < 19.4 ? -0.45 : 0;
+        for (const w of this.carModel.wheels) { w.rotation.order = 'YXZ'; w.rotation.x = this.wheelSpin; w.rotation.y = this.carModel.front.includes(w) ? steer : 0; }
+      }
       this.steer.rotation.z = te > 17.6 && te < 19.4 ? 0.6 : 0;
-      const seat = this.car.localToWorld(_q.set(0.42, 1.2 + Math.sin(te * 14) * 0.004 * (p.v > 1 ? 1 : 0), -0.2));
+      const seat = this.car.localToWorld(_q.set(0.42, 1.3 + Math.sin(te * 14) * 0.004 * (p.v > 1 ? 1 : 0), -0.2));
       cam.position.copy(seat);
       const ahead = this.car.localToWorld(new THREE.Vector3(0.3, 1.0, 12));
       cam.lookAt(ahead);

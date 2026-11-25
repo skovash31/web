@@ -47,6 +47,7 @@ function aimAt(p, x, y, z) {
   p.yaw = Math.atan2(x - p.x, z - p.z);
   p.pitch = Math.atan2(y - eye, Math.hypot(x - p.x, z - p.z));
 }
+const aimEyes = (p, ceo) => { const e = ceo.eyePoint(); aimAt(p, e.x, e.y, e.z); };
 // Freeze the CEO in place facing a direction (search + pause, no look-around).
 function hold(w, x, z, yaw) {
   Object.assign(w.ceo, { x, z, yaw, state: 'search', searchTimer: 99, pause: 99 });
@@ -60,7 +61,7 @@ function stunTests() {
     const w = makeWorld('b3');
     hold(w, tileCenter(4), tileCenter(18), Math.PI / 2);
     const p = addPlayer(w.room, 'p1', tileCenter(8), tileCenter(18), { flashlight: true });
-    aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z);
+    aimEyes(p, w.ceo);
     p.awareFix = true;
     const t = sim(w, 2, () => w.ceo.blinded);
     ok(t !== null && t >= BLIND.aimTime - 0.06, `a beam held on his eyes blinds him (after ${t?.toFixed(2)} s)`);
@@ -85,9 +86,9 @@ function stunTests() {
     w.ceo.blindCooldown = BLIND.cooldown;
     const p = addPlayer(w.room, 'p1', tileCenter(8), tileCenter(18), { flashlight: true });
     let blinded = false;
-    sim(w, BLIND.cooldown - 0.5, () => { aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z); p.x = tileCenter(8); if (w.ceo.blinded) { blinded = true; return true; } });
+    sim(w, BLIND.cooldown - 0.5, () => { aimEyes(p, w.ceo); p.x = tileCenter(8); if (w.ceo.blinded) { blinded = true; return true; } });
     ok(!blinded, `no second blind during the ${BLIND.cooldown} s cooldown`);
-    const t = sim(w, 2, () => { aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z); return w.ceo.blinded; });
+    const t = sim(w, 2, () => { aimEyes(p, w.ceo); return w.ceo.blinded; });
     ok(t !== null, 'once recharged, the stun works again');
   }
   {
@@ -95,9 +96,9 @@ function stunTests() {
     const cases = [
       ['beam aimed at his chest', (p, w) => aimAt(p, w.ceo.x, 1.0, w.ceo.z)],
       ['beam aimed a metre to his side', (p, w) => aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z + 1.2)],
-      ['flashlight switched off', (p, w) => { aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z); p.flashlight = false; }],
-      ['his back turned to the light', (p, w) => { w.ceo.yaw = -Math.PI / 2; aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z); }],
-      ['too far away (20 m)', (p, w) => { p.x = w.ceo.x + 20; aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z); }],
+      ['flashlight switched off', (p, w) => { aimEyes(p, w.ceo); p.flashlight = false; }],
+      ['his back turned to the light', (p, w) => { w.ceo.yaw = -Math.PI / 2; aimEyes(p, w.ceo); }],
+      ['too far away (20 m)', (p, w) => { p.x = w.ceo.x + 20; aimEyes(p, w.ceo); }],
     ];
     for (const [label, setup] of cases) {
       const w = makeWorld('b3', { cfg: { vision: 0, darkVision: 0 } });
@@ -112,7 +113,7 @@ function stunTests() {
     hold(w, tileCenter(4), tileCenter(18), 0);
     const p = addPlayer(w.room, 'p1', tileCenter(4), tileCenter(14), { flashlight: true });
     if (!w.floor.grid.lineOfSight(p.x, p.z, w.ceo.x, w.ceo.z, () => false)) {
-      aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z);
+      aimEyes(p, w.ceo);
       sim(w, 1.5);
       ok(!w.ceo.blinded, 'no blind through a wall');
     }
@@ -129,7 +130,7 @@ function stunTests() {
     w.ceo.form = 'human';
     const p = addPlayer(w.room, 'p1', tileCenter(spot[0] + 4), tileCenter(spot[1]), { flashlight: true });
     w.ceo.forceChase(p); w.ceo.action = null;
-    let t = sim(w, 2, () => { aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z); return w.ceo.blinded; });
+    let t = sim(w, 2, () => { aimEyes(p, w.ceo); return w.ceo.blinded; });
     ok(t !== null, 'Mr. Thatch in human form can be blinded too');
     p.flashlight = false; p.x = tileCenter(spot[0] + 5);
     t = sim(w, BLIND.duration + 0.2, () => !w.ceo.blinded);
@@ -141,7 +142,7 @@ function stunTests() {
     hold(w, tileCenter(4), tileCenter(18), Math.PI / 2);
     w.ceo.scriptMove(tileCenter(4), tileCenter(18), 2);
     const p = addPlayer(w.room, 'p1', tileCenter(8), tileCenter(18), { flashlight: true });
-    aimAt(p, w.ceo.x, w.ceo.eyeHeight(), w.ceo.z);
+    aimEyes(p, w.ceo);
     sim(w, 1.5);
     ok(!w.ceo.blinded, 'cannot be blinded during a cutscene');
   }
