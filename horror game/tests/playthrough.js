@@ -27,8 +27,8 @@ class Bot {
     this.s.on('ev', (e) => this.events.push(e));
     this.s.on('note', (n) => this.notes.push(n));
     this.s.on('inv', (d) => { this.inv = d.items; });
-    this.s.on('floor', (f) => { this.floor = f; this.grid = new Grid(LEVEL_BY_ID[f.state.levelId]); });
-    this.s.on('snap', (s) => { this.snaps.push(s); if (this.snaps.length > 4000) this.snaps.shift(); });
+    this.s.on('floor', (f) => { this.floor = f; this.grid = new Grid(LEVEL_BY_ID[f.state.levelId]); this.newFloor = true; }); // a (re)load spawns a new CEO: not a teleport
+    this.s.on('snap', (s) => { if (this.newFloor) { s.boundary = true; this.newFloor = false; } this.snaps.push(s); if (this.snaps.length > 4000) this.snaps.shift(); });
     this.s.on('keypad', (k) => { this.keypad = k; });
     this.s.on('keypadResult', (k) => { this.keypadResult = k; });
     this.s.on('lobby', (l) => { this.lobby = l; });
@@ -48,8 +48,9 @@ class Bot {
   }
   async use(id, extra = {}) {
     let e = this.ent(id);
+    // items may have been scattered to a random spot: use where the server put them
     const item = this.floor.state.items.find((i) => i.id === id);
-    if (!e && item) e = { x: item.x, z: item.z, tx: Math.floor(item.x / 2), tz: Math.floor(item.z / 2) };
+    if (item && item.state === 'world') e = { x: item.x, z: item.z, tx: Math.floor(item.x / 2), tz: Math.floor(item.z / 2) };
     const [x, z] = this.standNear(e);
     await this.goto(x, z);
     this.s.emit('interact', { id, ...extra });
@@ -106,6 +107,16 @@ export async function runPlaythrough() {
     ok(b.lobby?.settings?.waypoints === false, 'host turns objective markers off for everyone');
     a.s.emit('setting', { key: 'waypoints', value: true }); await sleep(150);
     ok(b.lobby?.settings?.waypoints === true, 'host turns objective markers back on');
+    // difficulty
+    ok(joined.lobby.settings?.difficulty === 'normal', 'difficulty defaults to Normal');
+    b.s.emit('setting', { key: 'difficulty', value: 'easy' }); await sleep(150);
+    ok(a.lobby?.settings?.difficulty === 'normal', 'non-host cannot change the difficulty');
+    a.s.emit('setting', { key: 'difficulty', value: 'nightmare' }); await sleep(150);
+    ok(b.lobby?.settings?.difficulty === 'normal', 'unknown difficulty values are rejected');
+    for (const d of ['hard', 'medium', 'easy', 'normal']) {
+      a.s.emit('setting', { key: 'difficulty', value: d }); await sleep(120);
+      ok(b.lobby?.settings?.difficulty === d, `host sets ${d} and every player sees it`);
+    }
     b.s.emit('startGame'); await sleep(200);
     ok(!a.floor, 'non-host cannot start the game');
     a.s.emit('startGame');
@@ -297,7 +308,7 @@ export async function runPlaythrough() {
     let maxSpeed = 0;
     const S = a.snaps;
     for (let i = 1; i < S.length; i++) {
-      if (!S[i].c || !S[i - 1].c || !S[i].ca || !S[i - 1].ca) continue;
+      if (!S[i].c || !S[i - 1].c || !S[i].ca || !S[i - 1].ca || S[i].boundary) continue;
       const dt = (S[i].t - S[i - 1].t) / 1000;
       if (dt <= 0 || dt > 0.5) continue;
       const d = Math.hypot(S[i].c.x - S[i - 1].c.x, S[i].c.z - S[i - 1].c.z);

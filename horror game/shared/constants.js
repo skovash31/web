@@ -54,3 +54,14 @@ export const ITEM_INFO = {
   specimen: { label: 'Specimen jar', icon: 'jar' },
   tape: { label: 'Access tape', icon: 'tape' },
 };
+
+// Lobby difficulty (host picks it). Multipliers are applied to each floor's CEO config.
+//   speed:   walk / run / search speed      doors: may open closed doors himself
+//   vents:   crawls through vents (vents stop being safe and he can see along them)
+export const DIFFICULTIES = {
+  easy:   { label: 'Easy',   desc: 'He moves at half speed and cannot open doors.', speed: 0.5, doors: false, vents: false, detect: 1, hearing: 1, hideCheck: 0, searchTime: 1, hunt: 1, doorTime: 1 },
+  normal: { label: 'Normal', desc: 'The intended experience.', speed: 1, doors: true, vents: false, detect: 1, hearing: 1, hideCheck: 0, searchTime: 1, hunt: 1, doorTime: 1 },
+  medium: { label: 'Medium', desc: 'Faster, sharper senses, checks more lockers and hunts more often.', speed: 1.2, doors: true, vents: false, detect: 1.25, hearing: 1.25, hideCheck: 0.12, searchTime: 1.3, hunt: 0.75, doorTime: 0.7 },
+  hard:   { label: 'Hard',   desc: '1.5x speed, sharp senses, and he crawls through the vents after you.', speed: 1.5, doors: true, vents: true, detect: 1.3, hearing: 1.3, hideCheck: 0.15, searchTime: 1.4, hunt: 0.6, doorTime: 0.6 },
+};
+export const DEFAULT_DIFFICULTY = 'normal';

@@ -8,7 +8,7 @@ CAT = **Consolidated Advanced Technologies**, an ordinary corporation with somet
 ```
 npm install
 npm start          # http://localhost:3000
-npm test           # level validation + CEO AI tests + full 2-player online playthrough
+npm test           # level validation, CEO AI, stun/difficulty/item/locker tests, full 2-player online playthrough
 node server/index.js --debug   # enables window.dbg({...}) cheats in the browser console
 ```
 
@@ -27,6 +27,24 @@ E interact/hide · Right-click or F flashlight (batteries you grab load straight
 
 Your character comments on what they find and pick up, and teammates' lines show with their names. All of it is in `public/js/story.js`; cutscenes are in `public/js/cutscene.js` and `public/js/ending.js`.
 
+## Flashlight stun
+Shine your flashlight **straight into Mr. Thatch's eyes** (he has to be facing you, within ~11 m, nothing in between) and hold it for a moment: he's **blinded for 5 seconds**: he freezes with his hands over his face, can't see, hear or catch anyone, and loses track of you afterwards. The stun then **recharges for 15 seconds** (shared by the team). The HUD shows *THATCH IS BLINDED* / *recharging* / *ready*, and the crosshair turns into a gold ring while your beam is on his eyes. It works on his human form too, but not during cutscenes. The server decides every blind (`server/CEO.js`, `BLIND`).
+
+## Difficulty
+The host picks it under **Lobby settings** (Normal by default; locked once the shift starts; shown on each floor's intro card).
+
+| Difficulty | Monster |
+|---|---|
+| Easy | 0.5× speed, **cannot open doors** (doors you leave open still let him through) |
+| Normal | standard behaviour and speed |
+| Medium | 1.2× speed, faster detection and sharper hearing, checks more lockers, searches longer, hunts more often, opens doors faster |
+| Hard | **1.5× speed**, Medium's senses, and he **crawls through vents** after you (vents are no longer safe) |
+
+Tuning lives in `shared/constants.js` (`DIFFICULTIES`).
+
+## Random items
+Batteries, first-aid kits and the office's misplaced folders are scattered to a new random spot every time a floor loads (new game, next floor or checkpoint reload). Each one stays inside the same door-bounded area it was designed for and lands only on open floor or on a desk, crate or gurney, never in a wall, a sealed room, a gas cloud or a doorway. Story items (keycards, fuses, specimens) keep their places. See `Floor.randomizeItems()`.
+
 ## Objective markers
 Gold diamond markers (with distance) point at whatever your current objectives need next — through walls, and as arrows on the screen edge when the target is behind you. They update as items are taken, notes read and switches thrown. The host can turn them off for everyone under **Lobby settings** (on by default). Targets are defined per objective in `shared/levels/*.js` (`targets`, plus `then` once those are done).
 
@@ -41,9 +59,9 @@ Gold diamond markers (with distance) point at whatever your current objectives n
 | B5 – Executive Level | Start 3 loud generators, arm the incinerator, lure Thatch inside | fastest, most perceptive CEO |
 
 ## Architecture
-- `server/` – authoritative simulation. `Room.js` (lobby, 20 Hz tick, snapshots, checkpoints, death/reload), `Floor.js` (doors, items, puzzles via a data-driven action DSL, hazards, trap), `CEO.js` (patrol / investigate / search / chase / kill state machine, vision cones with LOS, hearing, A* + path smoothing, opens doors, can't use vents, never teleports), `saves.js` (checkpoint JSON in `saves/<CODE>.json`).
+- `server/` – authoritative simulation. `Room.js` (lobby, 20 Hz tick, snapshots, checkpoints, death/reload), `Floor.js` (doors, items, puzzles via a data-driven action DSL, hazards, trap), `CEO.js` (patrol / investigate / search / chase / kill state machine, vision cones with LOS, hearing, A* + path smoothing, opens doors, can't use vents except on Hard, flashlight stun, difficulty scaling, never teleports), `saves.js` (checkpoint JSON in `saves/<CODE>.json`).
 - `shared/` – used by both sides: tile grid (collision, nav, line of sight), constants, ASCII level definitions.
 - `public/js/` – `main.js` (glue), `world.js` (instanced/batched level geometry, light pool, doors, gas), `props.js`, `textures.js` (procedural), `models.js` (GLB rigs with procedural animation), `player.js` (controller), `remotes.js` (interpolation), `audio.js` (procedural HRTF spatial audio and music), `ui.js`, `input.js`.
-- `3d models/` – player, monster (the CEO) and flashlight GLBs.
+- `3d models/` – `player.glb` (employees), `boss.glb` (Mr. Thatch's human form), `monster.glb` (his true form) and `flashlight.glb` (held in first person and by teammates).
 
 Saving: every floor arrival writes a checkpoint under the room code. Use **Continue from save** with that code to resume. If the whole team dies, everyone reloads the floor's checkpoint; dead players spectate teammates until the next floor.

@@ -57,6 +57,7 @@
           <tr><td>Space</td><td>Jump</td></tr>
           <tr><td>E</td><td>Interact / hide / leave hiding spot</td></tr>
           <tr><td>Right-click / F</td><td>Flashlight on/off (batteries you grab load automatically)</td></tr>
+          <tr><td>Flashlight in his eyes</td><td>Blinds Mr. Thatch for 5 s (recharges in 15 s)</td></tr>
           <tr><td>1-8 / wheel</td><td>Select inventory slot</td></tr>
           <tr><td>Q</td><td>Use battery / first-aid kit</td></tr>
           <tr><td>G</td><td>Drop item (hand keycards to teammates)</td></tr>
@@ -83,6 +84,15 @@
       <div class="settings">
         <div class="settings-title">Lobby settings <span id="settings-host" class="hint">(host only)</span></div>
         <label class="field check"><input id="opt-waypoints" type="checkbox" checked /> Objective markers — show where to go</label>
+        <label class="field diff">Difficulty
+          <select id="opt-difficulty">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+        <p id="diff-desc" class="hint"></p>
       </div>
       <div class="row">
         <button id="btn-start" class="primary">Start shift</button>
@@ -114,6 +124,7 @@
     <div id="team"></div>
     <div id="spectate" class="hidden"></div>
     <div id="hide-hint" class="hidden">HIDING — hold still. [E] to leave</div>
+    <div id="stun" class="hidden"><div id="stun-label"></div><div class="track"><div id="stun-fill"></div></div></div>
     <div id="chat"><div id="chat-log"></div><input id="chat-input" class="hidden" maxlength="200" placeholder="Say something to your team…" /></div>
     <div id="subtitle"></div>
     <div id="click-to-play" class="hidden">CLICK TO LOOK AROUND<br><span class="hint">mouse is captured · Esc to release</span></div>

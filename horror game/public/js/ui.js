@@ -1,5 +1,5 @@
 // DOM-based UI: menus, lobby, HUD, modals and overlays.
-import { PLAYER_COLORS, ITEM_INFO } from '../shared/constants.js';
+import { PLAYER_COLORS, ITEM_INFO, DIFFICULTIES } from '../shared/constants.js';
 
 const $ = (id) => document.getElementById(id);
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
@@ -51,6 +51,11 @@ export class UI {
     const wp = $('opt-waypoints');
     wp.checked = l.settings?.waypoints !== false;
     wp.disabled = !host;
+    const df = $('opt-difficulty');
+    const diff = DIFFICULTIES[l.settings?.difficulty] ? l.settings.difficulty : 'normal';
+    df.value = diff;
+    df.disabled = !host;
+    $('diff-desc').textContent = DIFFICULTIES[diff].desc;
     $('settings-host').classList.toggle('hidden', host);
     $('btn-start').classList.toggle('hidden', !host);
     $('lobby-wait').classList.toggle('hidden', host);

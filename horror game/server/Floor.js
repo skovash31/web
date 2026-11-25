@@ -34,6 +34,7 @@ export class Floor {
         this.items.set(e.id, { id: e.id, kind: e.kind, key: e.key, name: e.name, x: e.x, z: e.z, y: e.solid || 0, state: e.hidden ? 'hidden' : 'world', holder: null, onPickup: e.onPickup });
       }
     }
+    this.randomizeItems();
     // Puzzle setup
     for (const [gid, g] of Object.entries(level.groups || {})) {
       const st = { def: g, id: gid };
@@ -71,6 +72,87 @@ export class Floor {
         this.room.broadcastEvent({ type: 'sound', name: 'elevatorLeave' });
       };
       this.after(level.elevatorLeaves, close);
+    }
+  }
+
+  // ---------------------------------------------------------------- random item placement
+  // Loose collectibles (batteries, first-aid kits, misplaced folders...) are scattered to a
+  // new random spot every time a floor loads. Each item stays inside the same door-bounded
+  // area the level designer put it in, so an item can never land in a wall, a sealed room or
+  // somewhere the story hasn't unlocked yet. Story items (keycards on pedestals, puzzle
+  // pieces, anything with a pickup script or marked fixed) keep their authored spot.
+  randomizable(it) {
+    const e = this.ents.get(it.id);
+    return it.state === 'world' && e && !e.base && !e.onPickup && !e.fixed && !e.hidden;
+  }
+
+  areaLabels() {
+    const g = this.grid, W = g.w;
+    const label = new Int32Array(W * g.h).fill(-1);
+    const passable = (x, z) => {
+      const c = g.cell(x, z), i = z * W + x;
+      if (c === C.DOOR) { const d = this.doors.get(g.doorAt.get(i)?.id); return !!d && !d.locked && !d.gate && !d.elevatorDoor; }
+      if (c !== C.FLOOR && c !== C.ELEVATOR && c !== C.VENT) return false;
+      return !(g.solidTop[i] > 1.0); // tall props block; low ones can be climbed
+    };
+    let n = 0;
+    for (let z = 0; z < g.h; z++) for (let x = 0; x < W; x++) {
+      if (label[z * W + x] >= 0 || !passable(x, z)) continue;
+      const q = [[x, z]]; label[z * W + x] = n;
+      while (q.length) {
+        const [cx, cz] = q.pop();
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx, nz = cz + dz;
+          if (!g.inBounds(nx, nz) || label[nz * W + nx] >= 0 || !passable(nx, nz)) continue;
+          label[nz * W + nx] = n; q.push([nx, nz]);
+        }
+      }
+      n++;
+    }
+    return label;
+  }
+
+  randomizeItems() {
+    const movable = [...this.items.values()].filter((it) => this.randomizable(it));
+    if (!movable.length) return;
+    const g = this.grid, W = g.w;
+    const label = this.areaLabels();
+    const occupied = new Set();
+    for (const e of g.entities) if (e.type !== 'light' && !movable.some((it) => it.id === e.id)) occupied.add(e.tz * W + e.tx);
+    const spawn = new Set((this.spawnTiles || this.computeSpawns()).map(([x, z]) => z * W + x));
+    const inHazard = (x, z) => (this.level.hazards || []).some((h) => x >= h.rect[0] && x <= h.rect[2] && z >= h.rect[1] && z <= h.rect[3])
+      || (this.level.trap && x >= this.level.trap.zone[0] && x <= this.level.trap.zone[2] && z >= this.level.trap.zone[1] && z <= this.level.trap.zone[3]);
+    const nearDoor = (x, z) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => g.cell(x + dx, z + dz) === C.DOOR || g.cell(x + dx, z + dz) === C.ELEVATOR);
+    // candidate tiles per area: open floor, or the top of a desk / crate / gurney
+    const byArea = new Map();
+    for (let z = 0; z < g.h; z++) for (let x = 0; x < W; x++) {
+      const i = z * W + x;
+      if (g.cell(x, z) !== C.FLOOR || label[i] < 0 || spawn.has(i) || inHazard(x, z) || nearDoor(x, z)) continue;
+      const top = g.solidTop[i];
+      const ent = g.entities.find((e) => e.tx === x && e.tz === z && e.type !== 'light');
+      let y = 0;
+      if (top > 0) {
+        if (!(top >= 0.7 && top <= 1.0) || !ent || ent.type !== 'prop') continue; // only flat, low furniture
+        y = top;
+      } else if (occupied.has(i)) continue;
+      if (!byArea.has(label[i])) byArea.set(label[i], []);
+      byArea.get(label[i]).push({ x, z, y, i });
+    }
+    const placed = [];
+    const far = (c) => placed.every((p) => Math.max(Math.abs(p.x - c.x), Math.abs(p.z - c.z)) >= 3);
+    // shuffle so the spacing rule doesn't always favour the same items
+    for (let k = movable.length - 1; k > 0; k--) { const j = Math.floor(this.rng() * (k + 1)); [movable[k], movable[j]] = [movable[j], movable[k]]; }
+    for (const it of movable) {
+      const area = label[toTile(it.z) * W + toTile(it.x)];
+      const cands = (byArea.get(area) || []).filter((c) => !placed.some((p) => p.i === c.i));
+      if (!cands.length) continue;
+      const spaced = cands.filter(far);
+      const pool = spaced.length ? spaced : cands;
+      const c = pool[Math.floor(this.rng() * pool.length)];
+      placed.push(c);
+      // a little jitter inside the tile so it doesn't look grid-snapped
+      const jx = (this.rng() - 0.5) * (c.y ? 0.6 : 0.9), jz = (this.rng() - 0.5) * (c.y ? 0.6 : 0.9);
+      it.x = tileCenter(c.x) + jx; it.z = tileCenter(c.z) + jz; it.y = c.y;
     }
   }
 
@@ -551,13 +633,39 @@ export class Floor {
     p.hidden = null;
     p._hidWhileSeen = false;
     if (e) {
-      // step out in front of the hiding spot
-      p.x = e.x + Math.sin(e.facing) * 1.05;
-      p.z = e.z + Math.cos(e.facing) * 1.05;
+      // Step out in front of the hiding spot, clear of its collision box (and of anything
+      // else). Falls back to where the player stood before hiding.
+      const pt = this.exitPoint(e, p.preHide);
+      p.x = pt.x; p.z = pt.z; p.y = 0; p.vx = 0; p.vz = 0;
+      p.grace = Math.max(p.grace || 0, 0.6);
       this.room.toPlayer(p, 'teleport', { x: p.x, y: 0, z: p.z, yaw: e.facing });
     }
     this.room.broadcastEvent({ type: 'hide', player: p.id, spot: e?.id, on: false });
     this.room.noise(p.x, p.z, 3, p, 'hide');
+  }
+
+  // Is a standing player (radius + margin) free of walls, closed doors and props here?
+  spotFree(x, z, r = PLAYER.radius + 0.06) {
+    const tx = toTile(x), tz = toTile(z);
+    const c = this.grid.cell(tx, tz);
+    if (c !== C.FLOOR && c !== C.ELEVATOR && !(c === C.DOOR && this.isDoorOpen(this.grid.doorAtTile(tx, tz)?.id))) return false;
+    for (const b of this.grid.solidsNear(x, z, (id) => this.isDoorOpen(id))) {
+      if (b.bottom > 1.7) continue; // vent ceilings
+      const cx = Math.max(b.minX, Math.min(x, b.maxX)), cz = Math.max(b.minZ, Math.min(z, b.maxZ));
+      if ((x - cx) ** 2 + (z - cz) ** 2 < r * r) return false;
+    }
+    return true;
+  }
+
+  exitPoint(e, preHide) {
+    const f = e.facing || 0;
+    const cands = [];
+    for (const d of [1.35, 1.6, 1.9]) for (const side of [0, 0.35, -0.35]) {
+      cands.push({ x: e.x + Math.sin(f) * d + Math.cos(f) * side, z: e.z + Math.cos(f) * d - Math.sin(f) * side });
+    }
+    if (preHide) cands.push(preHide);
+    for (const [dx, dz] of [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) cands.push({ x: tileCenter(e.tx + dx), z: tileCenter(e.tz + dz) });
+    return cands.find((c) => this.spotFree(c.x, c.z)) || preHide || { x: e.x + Math.sin(f) * 1.35, z: e.z + Math.cos(f) * 1.35 };
   }
 
   // ---------------------------------------------------------------- per-tick

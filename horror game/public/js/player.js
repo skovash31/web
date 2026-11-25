@@ -41,7 +41,7 @@ export class LocalPlayer {
     camera.add(this.spot.target);
     this.viewModel = makeFlashlight();
     this.viewModel.position.set(0.24, -0.22, -0.42);
-    this.viewModel.scale.setScalar(0.75);
+    this.viewModel.scale.setScalar(0.85);
     camera.add(this.viewModel);
     this.fill = new THREE.PointLight(0xfff1d8, 0, 3.5, 2); // faint bounce so near walls read
     camera.add(this.fill);
@@ -114,6 +114,7 @@ export class LocalPlayer {
     }
     this.yaw -= input.dx;
     this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - input.dy));
+    this.unstick(grid, doorOpen);
 
     // Crouch (hold). Can't stand up under a low ceiling.
     const wantCrouch = input.crouch;
@@ -204,6 +205,31 @@ export class LocalPlayer {
     this.updateFlashlight(dt, input);
   }
 
+  refreshViewModel() {
+    const old = this.viewModel;
+    const vm = makeFlashlight();
+    vm.position.copy(old.position); vm.rotation.copy(old.rotation); vm.scale.copy(old.scale);
+    vm.visible = old.visible;
+    this.camera.remove(old);
+    this.camera.add(vm);
+    this.viewModel = vm;
+  }
+
+  // Safety net: if we ever end up overlapping a solid (a server correction, leaving a
+  // locker, a door closing on us), nudge out to the nearest free spot instead of freezing.
+  unstick(grid, doorOpen) {
+    const h = this.height;
+    if (!this.collides(grid, doorOpen, this.pos.x, this.pos.z, this.pos.y + 0.02, this.pos.y + h)) return false;
+    for (let r = 0.1; r <= 1.6; r += 0.1) {
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const x = this.pos.x + Math.sin(a) * r, z = this.pos.z + Math.cos(a) * r;
+        if (!this.collides(grid, doorOpen, x, z, this.pos.y + 0.02, this.pos.y + h)) { this.pos.x = x; this.pos.z = z; return true; }
+      }
+    }
+    return false;
+  }
+
   updateFlashlight(dt, input) {
     if (input.toggleFlash) {
       if (this.battery > 0) this.flashlight = !this.flashlight;
@@ -220,6 +246,7 @@ export class LocalPlayer {
     if (this.flashlight && this.battery < 15) intensity *= 0.5 + this.battery / 30;
     this.spot.intensity = intensity;
     this.fill.intensity = this.flashlight ? 0.6 : 0;
+    this.viewModel.userData.setOn?.(intensity > 5);
   }
 
   applyCamera(dt, t) {
@@ -234,7 +261,7 @@ export class LocalPlayer {
     // view model sway
     const vm = this.viewModel;
     vm.visible = !this.hidden;
-    vm.position.set(0.27 + bobX * 0.5, -0.25 + bobY * 0.6 - (this.sprinting ? 0.05 : 0), -0.5);
-    vm.rotation.set(this.sprinting ? 0.25 : 0, 0, 0);
+    vm.position.set(0.25 + bobX * 0.5, -0.24 + bobY * 0.6 - (this.sprinting ? 0.05 : 0), -0.46);
+    vm.rotation.set((this.sprinting ? 0.25 : 0) + 0.04, 0.06, 0);
   }
 }

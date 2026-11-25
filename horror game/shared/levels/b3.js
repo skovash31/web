@@ -40,7 +40,7 @@ export default {
     l: { type: 'lever', id: 'iso_lever', door: 'iso_gate', time: 9, soloTime: 16, wallFacing: true, title: 'Isolation gate lever' },
     k: { type: 'item', id: 'key_b4', kind: 'keycard', key: 'key_b4', name: 'B4 Keycard — Biological Research', base: 'desk', solid: 0.78 },
     f: { type: 'item', id: 'fuse_1', kind: 'fuse', name: 'Fuse', base: 'desk', solid: 0.78 },
-    u: { type: 'item', id: 'fuse_2', kind: 'fuse', name: 'Fuse' },
+    u: { type: 'item', id: 'fuse_2', kind: 'fuse', name: 'Fuse', fixed: true }, // stays in the timed-gate room
     w: { type: 'note', id: 'b3_warden', title: "Warden's log",
       text: 'He comes down more often now. He used to come once a month. Now it is every night.\n\nHe does not walk the corridors like before. He HUNTS. He knows where they are hiding — he listens for the heartbeat, I swear it.\n\nThe lockers are not safe if he saw you get in.\n\nI am requesting a transfer to B1.' },
     d: { type: 'note', id: 'b3_dana', title: "Dana's notebook",

@@ -7,7 +7,7 @@ const loader = new GLTFLoader();
 const store = {};
 
 export async function loadModels(onProgress) {
-  const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb']];
+  const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb'], ['boss', 'models/boss.glb']];
   let done = 0;
   await Promise.all(list.map(([k, url]) => new Promise((res) => {
     loader.load(url, (g) => { store[k] = g.scene; done++; onProgress?.(done / list.length); res(); }, undefined, (e) => { console.warn('model failed', url, e); store[k] = null; done++; res(); });
@@ -30,15 +30,30 @@ function prepare(root, { tint, shadow = true } = {}) {
   return root;
 }
 
+// The provided flashlight.glb. Its lens faces -Z (LightOrigin marks the beam start).
+// Materials are cloned per instance so the lens can glow while the light is on; the
+// fully-metallic trim is toned down because there is no environment map to reflect.
 export function makeFlashlight() {
   const src = store.flashlight;
   if (!src) {
     const g = new THREE.Group();
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.2, 12), new THREE.MeshStandardMaterial({ color: 0x111111 }));
     m.rotation.x = Math.PI / 2; g.add(m);
+    g.userData.setOn = () => {};
     return g;
   }
-  return prepare(src.clone(true), { shadow: false });
+  const root = prepare(src.clone(true), { shadow: false });
+  let lens = null;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = o.material.clone();
+    if (o.material.name === 'Metal') { o.material.metalness = 0.55; o.material.roughness = 0.35; }
+    if (o.material.name === 'BlackBody') o.material.color.setRGB(0.09, 0.09, 0.1);
+    if (o.material.name === 'Lens') { lens = o.material; lens.emissive = new THREE.Color(0xfff1d0); lens.emissiveIntensity = 0; }
+  });
+  root.userData.lightOrigin = find(root, 'LightOrigin');
+  root.userData.setOn = (on) => { if (lens) lens.emissiveIntensity = on ? 2.2 : 0; };
+  return root;
 }
 
 // ---------------------------------------------------------------- employees
@@ -92,44 +107,19 @@ export class PlayerRig {
 }
 
 // ---------------------------------------------------------------- Mr. Thatch, human disguise
-// Built from the employee model: charcoal suit, red tie, pale skin, slicked grey hair.
+// The provided boss.glb (top hat, gold company badge), animated like the employees.
 export class HumanRig {
   constructor() {
     this.root = new THREE.Group();
-    const src = store.player;
-    const suit = new THREE.MeshStandardMaterial({ color: 0x23252b, roughness: 0.55 });
-    const trousers = new THREE.MeshStandardMaterial({ color: 0x1a1b1f, roughness: 0.6 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0xe6dccf, roughness: 0.5 });
-    const hair = new THREE.MeshStandardMaterial({ color: 0x9a9a9e, roughness: 0.4 });
-    const red = new THREE.MeshStandardMaterial({ color: 0x8a1010, roughness: 0.4 });
-    const white = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.6 });
+    const src = store.boss;
     if (src) {
-      this.model = src.clone(true);
+      this.model = prepare(src.clone(true));
       this.model.scale.set(1.04, 1.08, 1.04);
       this.root.add(this.model);
-      this.model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-      for (const n of ['Head', 'Torso', 'Arm_R', 'Arm_L', 'Leg_R', 'Leg_L']) this[n] = find(this.model, n);
-      const setMat = (node, m) => node?.traverse((o) => { if (o.isMesh) o.material = m; });
-      setMat(this.Torso, suit); setMat(this.Arm_R, suit); setMat(this.Arm_L, suit);
-      setMat(this.Leg_R, trousers); setMat(this.Leg_L, trousers); setMat(this.Head, skin);
-      // shirt, tie, hair, a too-wide smile
-      const add = (parent, geo, m, x, y, z) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = true; parent.add(me); return me; };
-      if (this.Torso) {
-        add(this.Torso, new THREE.BoxGeometry(0.14, 0.4, 0.02), white, 0, 0.5, 0.112);
-        add(this.Torso, new THREE.BoxGeometry(0.05, 0.34, 0.02), red, 0, 0.47, 0.123);
-      }
-      if (this.Head) {
-        const cap = add(this.Head, new THREE.SphereGeometry(0.262, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), hair, 0, 0.3, -0.015);
-        cap.scale.set(1.02, 1.05, 1.04);
-        const back = add(this.Head, new THREE.SphereGeometry(0.258, 16, 10, Math.PI * 0.6, Math.PI * 0.8, 0, Math.PI * 0.62), hair, 0, 0.3, -0.01);
-        back.scale.set(1.02, 1, 1.04);
-        // the smile: too wide, too many teeth
-        add(this.Head, new THREE.BoxGeometry(0.28, 0.05, 0.012), new THREE.MeshStandardMaterial({ color: 0x2a0606 }), 0, 0.17, 0.247);
-        add(this.Head, new THREE.BoxGeometry(0.25, 0.02, 0.014), white, 0, 0.18, 0.249);
-        for (const x of [-0.1, 0.1]) add(this.Head, new THREE.BoxGeometry(0.06, 0.03, 0.01), new THREE.MeshStandardMaterial({ color: 0x111111 }), x, 0.32, 0.252);
-      }
+      for (const n of ['Head', 'Torso', 'Arm_R', 'Arm_L', 'Leg_R', 'Leg_L', 'TopHat', 'Badge']) this[n] = find(this.model, n);
+      this.model.traverse((o) => { if (o.isMesh && o.material.name === 'GoldBadge') { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0x3a2a08); } });
     } else {
-      const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 1.1, 4, 8), suit);
+      const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 1.1, 4, 8), new THREE.MeshStandardMaterial({ color: 0x23252b }));
       m.position.y = 0.85; this.root.add(m);
     }
     this.phase = 0;
@@ -137,6 +127,7 @@ export class HumanRig {
     this.stepCallback = null;
     this.lastStepSign = 0;
     this.reach = 0;
+    this.cover = 0;
   }
 
   update(dt, anim, speed) {
@@ -153,13 +144,17 @@ export class HumanRig {
     this.Leg_L.rotation.x = moving ? -s * amp : 0;
     const reachT = anim === 'reach' || anim === 'kill' || anim === 'check' || anim === 'open' ? 1 : 0;
     this.reach += (reachT - this.reach) * Math.min(1, dt * 6);
-    this.Arm_R.rotation.x = (moving ? -s * amp * 0.7 : 0) * (1 - this.reach) - this.reach * 1.4;
-    this.Arm_L.rotation.x = (moving ? s * amp * 0.7 : 0) * (1 - this.reach) - (anim === 'kill' ? this.reach * 1.4 : 0);
+    // blinded: both hands thrown up over his eyes, staggering
+    this.cover += ((anim === 'blind' ? 1 : 0) - this.cover) * Math.min(1, dt * 10);
+    const c = this.cover;
+    this.Arm_R.rotation.x = ((moving ? -s * amp * 0.7 : 0) * (1 - this.reach) - this.reach * 1.4) * (1 - c) - c * 2.6;
+    this.Arm_L.rotation.x = ((moving ? s * amp * 0.7 : 0) * (1 - this.reach) - (anim === 'kill' ? this.reach * 1.4 : 0)) * (1 - c) - c * 2.5;
+    this.Arm_R.rotation.z = c * 0.5; this.Arm_L.rotation.z = -c * 0.5;
     // a stiff, slightly-too-still posture; the head tilts when he talks
-    this.Head.rotation.z = anim === 'talk' ? Math.sin(this.t * 2.2) * 0.12 : 0;
-    this.Head.rotation.x = anim === 'talk' ? Math.sin(this.t * 3.1) * 0.05 : 0;
+    this.Head.rotation.z = anim === 'talk' ? Math.sin(this.t * 2.2) * 0.12 : c * Math.sin(this.t * 9) * 0.25;
+    this.Head.rotation.x = anim === 'talk' ? Math.sin(this.t * 3.1) * 0.05 : c * 0.35;
     this.model.position.y = moving ? Math.abs(Math.cos(this.phase)) * 0.03 : 0;
-    this.Torso.rotation.x = speed > 3 ? 0.25 : 0;
+    this.Torso.rotation.x = speed > 3 ? 0.25 : c * 0.2;
   }
 
   headWorldPos(out) {
@@ -197,6 +192,8 @@ export class MonsterRig {
     this.twitchTarget = new THREE.Euler();
     this.twitchCur = new THREE.Euler();
     this.lean = 0;
+    this.crawl = false;   // set by the renderer while he squeezes through a vent (Hard)
+    this.crawlAmt = 0;
     this.stepCallback = null;
     this.lastStepSign = 0;
   }
@@ -222,7 +219,7 @@ export class MonsterRig {
     this.lastStepSign = sign;
     const run = anim === 'run';
     const amp = run ? 0.75 : 0.42;
-    const leanTarget = run ? 0.38 : anim === 'search' ? 0.1 : anim === 'roar' ? -0.35 : 0.05;
+    const leanTarget = run ? 0.38 : anim === 'search' ? 0.1 : anim === 'roar' ? -0.35 : anim === 'blind' ? -0.3 : 0.05;
     this.lean += (leanTarget - this.lean) * Math.min(1, dt * 5);
     // random unnatural head twitches
     this.twitch -= dt;
@@ -243,7 +240,12 @@ export class MonsterRig {
     if (anim === 'roar') { armRz = 0.9; armLz = -0.9; armRx = -0.5; armLx = -0.5; headX = -0.6; headZ = Math.sin(t * 30) * 0.15; }
     if (anim === 'kill') { armRx = -2.2 + Math.sin(t * 14) * 0.3; armLx = -2.0 + Math.cos(t * 14) * 0.3; headX = 0.3 + Math.sin(t * 25) * 0.2; }
     if (anim === 'burn') { armRx = -2.6 + Math.sin(t * 17) * 0.6; armLx = -2.4 + Math.cos(t * 19) * 0.6; headX = -0.8 + Math.sin(t * 31) * 0.3; headZ = Math.sin(t * 23) * 0.4; }
+    if (anim === 'blind') { armRx = -2.5 + Math.sin(t * 13) * 0.2; armLx = -2.4 + Math.cos(t * 11) * 0.2; armRz = 0.45; armLz = -0.45; headX = 0.35 + Math.sin(t * 21) * 0.15; headY = Math.sin(t * 7) * 0.6; headZ = Math.sin(t * 17) * 0.25; }
     if (run) { armRx = -0.9 - s * 0.5; armLx = -0.9 + s * 0.5; } // reaching forward while chasing
+    // crawling through a vent: body pitched forward, clawing along
+    this.crawlAmt += ((this.crawl ? 1 : 0) - this.crawlAmt) * Math.min(1, dt * 6);
+    const cr = this.crawlAmt;
+    if (cr > 0.01) { armRx = armRx * (1 - cr) + cr * (-1.6 - s * 0.6); armLx = armLx * (1 - cr) + cr * (-1.6 + s * 0.6); }
 
     this.rot('Leg_R', s * amp, 0, 0);
     this.rot('Leg_L', -s * amp, 0, 0);
@@ -252,8 +254,9 @@ export class MonsterRig {
     this.rot('Torso', this.lean + (moving ? Math.abs(s) * 0.05 : Math.sin(t * 1.2) * 0.02), moving ? s * 0.12 : 0, 0);
     this.rot('Neck', this.lean * -0.5, 0, 0);
     this.rot('Head', headX, headY, headZ);
-    this.model.position.y = moving ? Math.abs(Math.cos(this.phase)) * (run ? 0.09 : 0.05) : Math.sin(t * 1.2) * 0.01;
-    if (this.pupil) this.pupil.emissiveIntensity = run ? 1.5 : 0.5;
+    this.model.position.y = (moving ? Math.abs(Math.cos(this.phase)) * (run ? 0.09 : 0.05) : Math.sin(t * 1.2) * 0.01) + cr * 0.2;
+    this.model.rotation.x = cr * 1.3;
+    if (this.pupil) this.pupil.emissiveIntensity = anim === 'blind' ? 0.05 : run ? 1.5 : 0.5;
   }
 
   headWorldPos(out) {

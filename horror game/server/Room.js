@@ -3,7 +3,7 @@
 import { Floor } from './Floor.js';
 import { CEO } from './CEO.js';
 import { LEVELS, LEVEL_BY_ID } from '../shared/levels/index.js';
-import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE } from '../shared/constants.js';
+import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY } from '../shared/constants.js';
 import { toTile, C, tileCenter } from '../shared/grid.js';
 import { saveCheckpoint } from './saves.js';
 
@@ -28,7 +28,7 @@ export class Room {
     this.transitioning = false;
     this.onEmpty = opts.onEmpty || (() => {});
     this.colorPool = [0, 1, 2, 3];
-    this.settings = { waypoints: true };
+    this.settings = { waypoints: true, difficulty: DEFAULT_DIFFICULTY };
   }
 
   // ---------------------------------------------------------------- membership
@@ -84,8 +84,9 @@ export class Room {
   // Host-only lobby settings (e.g. objective markers on/off).
   setSetting(byId, key, value) {
     if (byId !== this.hostId) return false;
-    if (key !== 'waypoints') return false;
-    this.settings[key] = !!value;
+    if (key === 'waypoints') this.settings.waypoints = !!value;
+    else if (key === 'difficulty' && Object.hasOwn(DIFFICULTIES, value) && this.phase !== 'playing') this.settings.difficulty = value;
+    else return false;
     this.broadcastLobby();
     return true;
   }
@@ -119,11 +120,11 @@ export class Room {
     this.floorIndex = index;
     this.cutscene = null;
     this.floor = new Floor(level, this, (Date.now() ^ (index * 7919)) >>> 0);
-    this.ceo = level.ceo ? new CEO(this, this.floor, level.ceo) : null;
+    this.ceo = level.ceo ? new CEO(this, this.floor, level.ceo, this.settings.difficulty) : null;
     let i = 0;
     for (const p of this.players.values()) {
       const sp = this.floor.spawnPoint(i++);
-      Object.assign(p, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, alive: true, hidden: null, health: PLAYER.maxHealth, invuln: 3, grace: 2, frozen: false });
+      Object.assign(p, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, alive: true, hidden: null, health: PLAYER.maxHealth, invuln: p.god ? 99999 : 3, grace: 2, frozen: false });
       p.yaw = Math.PI; // face out of the elevator / into the room
     }
     // Recreate carried consumables in the new floor's item table.
@@ -429,8 +430,9 @@ export class Room {
     if (cmd.flag && this.floor) this.floor.setFlag(cmd.flag);
     if (cmd.give && this.floor) { const it = this.floor.items.get(cmd.give); if (it) this.floor.pickup(p, it); }
     if (cmd.ceo && this.ceo) { if (cmd.ceo === 'activate') this.ceo.activate(); if (cmd.ceo === 'sleep') this.ceo.state = 'dormant'; }
-    if (cmd.god === true) p.invuln = 99999;
-    if (cmd.god === false) p.invuln = 0;
+    if (cmd.god === true) { p.invuln = 99999; p.god = true; }
+    if (cmd.report) p.socket.emit('debugInfo', { difficulty: this.settings.difficulty, ceo: this.ceo ? { difficulty: this.ceo.difficulty, run: this.ceo.cfg.run, vents: !!this.floor.grid.ceoVents } : null, items: this.floor ? [...this.floor.items.values()].map((it) => ({ id: it.id, x: it.x, z: it.z })) : [] });
+    if (cmd.god === false) { p.invuln = 0; p.god = false; }
     if (cmd.tp) { p.x = +cmd.tp.x; p.z = +cmd.tp.z; p.y = 0; p.grace = 0.6; p.socket.emit('teleport', { x: p.x, y: 0, z: p.z }); }
     if (cmd.ceoGoto && this.ceo) { this.ceo.state = 'investigate'; this.ceo.urgent = false; this.ceo.lastKnown = { ...cmd.ceoGoto }; this.ceo.setGoal(cmd.ceoGoto.x, cmd.ceoGoto.z); }
     if (cmd.kill) this.killPlayer(p, 'debug');

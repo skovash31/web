@@ -174,6 +174,7 @@ export class Grid {
   ceoWalkable(x, z, doorPassable) {
     const c = this.cell(x, z);
     if (c === C.FLOOR || c === C.ELEVATOR) return !this.solidTop[z * this.w + x];
+    if (c === C.VENT) return !!this.ceoVents; // Hard difficulty: he crawls through vents
     if (c === C.DOOR) { const d = this.doorAt.get(z * this.w + x); return !!d && doorPassable(d.id); }
     return false;
   }
@@ -243,7 +244,8 @@ export class Grid {
   // ---- Vision ------------------------------------------------------------
   tileOpaque(x, z, doorOpen) {
     const c = this.cell(x, z);
-    if (c === C.WALL || c === C.VENT) return true;
+    if (c === C.WALL) return true;
+    if (c === C.VENT) return !this.ceoVents; // a vent he can crawl into is a tunnel he can see along
     if (c === C.DOOR) { const d = this.doorAt.get(z * this.w + x); return !d || !doorOpen(d.id); }
     return this.opaqueProp[z * this.w + x] === 1;
   }

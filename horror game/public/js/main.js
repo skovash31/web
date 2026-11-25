@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { LEVEL_BY_ID, LEVELS } from '../shared/levels/index.js';
 import { C, toTile } from '../shared/grid.js';
-import { PLAYER, SEND_RATE } from '../shared/constants.js';
+import { PLAYER, SEND_RATE, DIFFICULTIES } from '../shared/constants.js';
 import { World } from './world.js';
 import { LocalPlayer } from './player.js';
 import { Remotes } from './remotes.js';
@@ -48,6 +48,8 @@ const finale = new Finale({ renderer, mainScene: scene, camera, audio, story, ui
 remotes.onTransform = () => { me.shake = 1.2; };
 const NEUTRAL = { dx: 0, dy: 0 };
 const modelsReady = loadModels((p) => { document.getElementById('load-pct').textContent = Math.round(p * 100) + '%'; });
+// The local player is created before the GLBs arrive: swap in the real flashlight model.
+modelsReady.then(() => me.refreshViewModel());
 
 const net = io({ transports: ['websocket', 'polling'] });
 const G = {
@@ -86,6 +88,7 @@ $('btn-continue').onclick = () => {
 };
 $('join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-join').click(); });
 $('opt-waypoints').onchange = (e) => net.emit('setting', { key: 'waypoints', value: e.target.checked });
+$('opt-difficulty').onchange = (e) => net.emit('setting', { key: 'difficulty', value: e.target.value });
 $('btn-copy').onclick = () => navigator.clipboard?.writeText($('lobby-code').textContent);
 $('btn-start').onclick = async () => { audio.init(); lockPointer(); ui.screen('loading'); await modelsReady; net.emit('startGame'); };
 $('btn-leave').onclick = () => { net.emit('leaveRoom'); G.phase = 'menu'; ui.screen('menu'); };
@@ -163,6 +166,7 @@ net.on('floor', async (f) => {
   G.floorIndex = f.floorIndex;
   G.level = LEVEL_BY_ID[f.state.levelId];
   G.grid = world.build(f.state.levelId, f.state);
+  remotes.grid = G.grid;
   G.flags = world.flags;
   G.journal = f.journal || [];
   G.debug = f.debug;
@@ -187,7 +191,13 @@ net.on('floor', async (f) => {
   G.phase = 'playing';
   input.enabled = true;
   ui.fade(false, 1500);
-  if (changed) { ui.intro(G.level.intro); if (f.floorIndex > 0) audio.play('ding'); story.arrival(G.level.id); }
+  if (changed) {
+    const d = DIFFICULTIES[G.lobby?.settings?.difficulty];
+    const lines = [...(G.level.intro || [])];
+    if (d && G.lobby.settings.difficulty !== 'normal') lines[2] = `${lines[2] ? lines[2] + ' · ' : ''}${d.label.toUpperCase()} DIFFICULTY`;
+    ui.intro(lines);
+  }
+  if (changed) { if (f.floorIndex > 0) audio.play('ding'); story.arrival(G.level.id); }
   if (!input.locked) ui.clickToPlay(true);
 });
 
@@ -267,6 +277,7 @@ function handleEvent(e) {
         if (e.on) story.hide();
         me.hidden = e.on ? e.spot : null;
         if (e.on && ent) { me.hideYaw = ent.facing; me.yaw = ent.facing; me.pitch = 0; }
+        if (!e.on) { me.vel.set(0, 0, 0); me.crouch = false; }
         ui.hiding(e.on);
       }
       break;
@@ -321,6 +332,16 @@ function handleEvent(e) {
         }
       }
       if (e.what === 'lost' && me.alive) story.lost();
+      if (e.what === 'blind') {
+        remotes.blindFlare();
+        const d = remotes.ceoState ? Math.hypot(remotes.ceoState.x - me.pos.x, remotes.ceoState.z - me.pos.z) : 99;
+        if (me.alive && (e.by === G.myId || d < 20)) {
+          me.shake = Math.max(me.shake, 0.3);
+          if (e.by === G.myId) story.say('you', e.form === 'human' ? 'Right in the eyes! Go, go!' : "It worked — he can't see! Move!", { priority: true });
+          else story.say(G.roster.find((p) => p.id === e.by)?.name || 'you', 'I blinded him! Run!', { priority: true });
+        }
+      }
+      if (e.what === 'unblind' && me.alive && remotes.ceoState && Math.hypot(remotes.ceoState.x - me.pos.x, remotes.ceoState.z - me.pos.z) < 18) story.say('you', "He's shaking it off...", { key: 'unblind', cooldown: 20 });
       break;
     case 'trap': world.setTrapSealed(); me.shake = 2; break;
     case 'left': G.alive.delete(e.id); break;
@@ -512,6 +533,46 @@ me.onLand = () => { net.emit('noise', 'land'); audio.footstep(surfaceAt(me.pos.x
 
 let last = performance.now();
 let fpsAcc = 0, fpsN = 0;
+// ---------------------------------------------------------------- flashlight stun HUD
+// The server decides whether a beam blinds him; this mirrors its aim test so the
+// crosshair can show when the light is on his eyes, and shows blind / recharge state.
+const STUN = { duration: 5, cooldown: 15 };
+const _eyes = new THREE.Vector3();
+function aimingAtEyes() {
+  const rig = remotes.ceoRig, c = remotes.ceoState;
+  if (!rig || !c || !me.flashlight || !me.alive || me.hidden) return false;
+  rig.headWorldPos(_eyes);
+  const d = _eyes.distanceTo(camera.position);
+  if (d > 11 || d < 0.6) return false;
+  me.forward(_fwd);
+  _v.copy(_eyes).sub(camera.position).normalize();
+  return Math.acos(Math.max(-1, Math.min(1, _v.dot(_fwd)))) < Math.atan2(0.3, d) + 0.04;
+}
+function updateStun(dt) {
+  const el = $('stun');
+  const c = remotes.ceoState;
+  const playing = G.phase === 'playing' && me.alive && c && remotes.ceoActive && !cutscenes.active;
+  let mode = null, label = '', fill = 0;
+  if (playing && c.bl > 0) { mode = 'blind'; label = 'THATCH IS BLINDED'; fill = c.bl / STUN.duration; }
+  else if (playing && c.cd > 0) { mode = 'cool'; label = `Flashlight stun recharging · ${Math.ceil(c.cd)}s`; fill = 1 - c.cd / STUN.cooldown; }
+  else if (playing) {
+    const near = Math.hypot(c.x - me.pos.x, c.z - me.pos.z) < 14;
+    if (G.stunWasCooling) { G.stunWasCooling = false; G.stunReadyT = 3; audio.play('stunReady'); }
+    if (G.stunReadyT > 0 || (near && me.flashlight)) { mode = 'ready'; label = 'Flashlight stun ready — shine it in his eyes'; fill = 1; }
+    G.stunReadyT = Math.max(0, (G.stunReadyT || 0) - dt);
+  }
+  if (mode === 'cool') G.stunWasCooling = true;
+  if (playing && G.grid && G.grid.cell(toTile(c.x), toTile(c.z)) === C.VENT && Math.hypot(c.x - me.pos.x, c.z - me.pos.z) < 12) story.say('you', "He's in the vents! He's coming through the vents!", { key: 'ceovent', cooldown: 40, priority: true });
+  if (playing && c.fm === 'monster' && !G.stunTipShown && Math.hypot(c.x - me.pos.x, c.z - me.pos.z) < 16) {
+    G.stunTipShown = true;
+    setTimeout(() => ui.message('Tip: shine your flashlight straight into his eyes to blind him for 5 seconds.', 7), 2500);
+  }
+  el.classList.toggle('hidden', !mode);
+  el.className = mode ? mode : 'hidden';
+  if (mode) { $('stun-label').textContent = label; $('stun-fill').style.width = `${Math.round(fill * 100)}%`; }
+  $('crosshair').classList.toggle('stun-aim', !!(playing && !(c.bl > 0) && !(c.cd > 0) && aimingAtEyes()));
+}
+
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -584,6 +645,7 @@ function frame(now) {
   ui.tickTimer();
   updateMarkers(dt);
   storyChecks(dt);
+  updateStun(dt);
   const ceo = remotes.ceoState;
   const dC = ceo ? Math.hypot(ceo.x - camera.position.x, ceo.z - camera.position.z) : 99;
   const chasing = ceo && (ceo.st === 'chase' || (ceo.st === 'scripted' && ceo.fm !== 'human'));

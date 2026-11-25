@@ -3,16 +3,22 @@
 // He only ever moves by walking along A* paths at bounded speed (no teleports),
 // opens doors physically, can't fit through vents, and is synced to every client.
 import { Grid, C, toTile, tileCenter } from '../shared/grid.js';
+import { PLAYER, DIFFICULTIES, DEFAULT_DIFFICULTY } from '../shared/constants.js';
+
+// Flashlight stun: shine the beam into his eyes to blind him.
+export const BLIND = { duration: 5, cooldown: 15, aimTime: 0.3, range: 11 };
 
 const TAU = Math.PI * 2;
 const wrap = (a) => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
 
 export class CEO {
-  constructor(room, floor, cfg) {
+  constructor(room, floor, cfg, difficulty = DEFAULT_DIFFICULTY) {
     this.room = room;
     this.floor = floor;
     this.grid = floor.grid;
     this.cfg = { catchRange: 1.15, detectRate: 1.5 + floor.level.index * 0.18, ...cfg };
+    this.difficulty = DIFFICULTIES[difficulty] ? difficulty : DEFAULT_DIFFICULTY;
+    this.applyDifficulty(DIFFICULTIES[this.difficulty]);
     const sp = this.grid.entities.find((e) => e.type === 'ceoSpawn');
     this.x = sp ? sp.x : tileCenter(1);
     this.z = sp ? sp.z : tileCenter(1);
@@ -43,8 +49,28 @@ export class CEO {
     this.rng = Math.random;
     this.form = cfg.form || 'monster'; // 'human' until he reveals himself
     this.scriptSpeed = 0;
-    this.doorPassable = (id) => this.floor.ceoCanPass(id);
+    // Easy: he can't open doors himself (cutscenes still move him through them).
+    this.doorPassable = (id) => this.floor.ceoCanPass(id) && (this.diff.doors || this.floor.isDoorOpen(id) || this.state === 'scripted');
     this.doorOpen = (id) => this.floor.isDoorOpen(id);
+    this.blindTimer = 0;     // > 0 while blinded
+    this.blindCooldown = 0;  // > 0 while the stun is recharging
+    this.aimTime = new Map(); // playerId -> seconds the beam has been on his eyes
+  }
+
+  get blinded() { return this.blindTimer > 0; }
+
+  applyDifficulty(d) {
+    this.diff = d;
+    const c = this.cfg;
+    for (const k of ['walk', 'run', 'search']) if (c[k]) c[k] *= d.speed;
+    c.detectRate *= d.detect;
+    c.hearing = (c.hearing ?? 1) * d.hearing;
+    c.hideCheck = Math.min(0.95, (c.hideCheck ?? 0.3) + d.hideCheck);
+    c.searchTime = (c.searchTime ?? 20) * d.searchTime;
+    c.doorTime = d.doorTime;
+    if (d.hunt !== 1 && this.floor.level.index > 0) c.huntInterval = (c.huntInterval || 90) * d.hunt;
+    // Hard: the vents are his too
+    this.grid.ceoVents = !!d.vents;
   }
 
   get active() { return this.state !== 'dormant'; }
@@ -64,12 +90,14 @@ export class CEO {
   }
 
   snapshot() {
-    return { x: +this.x.toFixed(2), z: +this.z.toFixed(2), yaw: +this.yaw.toFixed(3), st: this.state, an: this.anim, sp: +this.speed.toFixed(2), fm: this.form };
+    return { x: +this.x.toFixed(2), z: +this.z.toFixed(2), yaw: +this.yaw.toFixed(3), st: this.state, an: this.anim, sp: +this.speed.toFixed(2), fm: this.form,
+      bl: +this.blindTimer.toFixed(1), cd: +this.blindCooldown.toFixed(1) };
   }
 
   // Cutscene control: walk (never teleport) to a point at a given speed, ignoring players.
   scriptMove(x, z, speed) {
     this.state = 'scripted';
+    this.blindTimer = 0;
     this.scriptSpeed = speed;
     this.target = null;
     this.setGoal(x, z);
@@ -127,7 +155,7 @@ export class CEO {
 
   // Called by the room whenever a sound is made.
   hear(x, z, radius, kind, sourcePlayer) {
-    if (!this.active || this.state === 'trapped' || this.state === 'scripted' || (this.action && this.action.type === 'kill')) return;
+    if (!this.active || this.blinded || this.state === 'trapped' || this.state === 'scripted' || (this.action && this.action.type === 'kill')) return;
     const d = Math.hypot(x - this.x, z - this.z);
     let eff = radius * this.cfg.hearing;
     if (!this.grid.lineOfSight(this.x, this.z, x, z, this.doorOpen)) eff *= 0.62;
@@ -278,6 +306,7 @@ export class CEO {
   update(dt) {
     if (this.state === 'dormant') { this.anim = 'idle'; this.speed = 0; return; }
     if (this.state === 'trapped') { this.anim = 'burn'; this.speed = 0; this.yaw += dt * 3; return; }
+    if (this.updateBlind(dt)) return;
 
     // Ongoing timed action (opening a door, roaring, killing, checking a locker)
     if (this.action) {
@@ -404,6 +433,77 @@ export class CEO {
     }
   }
 
+  // ---------------------------------------------------------------- flashlight stun
+  // Height of his eyes above the floor for the current form / pose.
+  eyeHeight() {
+    if (this.grid.cell(toTile(this.x), toTile(this.z)) === C.VENT) return 0.75;
+    return this.form === 'monster' ? 2.1 : 1.62;
+  }
+
+  // Is this player's flashlight beam pointed straight into his eyes (and can he see it)?
+  beamInEyes(p) {
+    if (!p.flashlight || p.hidden || !p.alive) return false;
+    const ex = this.x, ez = this.z, ey = this.eyeHeight();
+    const py = (p.y || 0) + (p.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand);
+    const dx = ex - p.x, dy = ey - py, dz = ez - p.z;
+    const flat = Math.hypot(dx, dz);
+    if (flat > BLIND.range || flat < 0.6) return false;
+    // he has to be facing the light for it to reach his eyes
+    if (Math.abs(wrap(Math.atan2(p.x - ex, p.z - ez) - this.yaw)) > 1.35) return false;
+    if (!this.grid.lineOfSight(p.x, p.z, ex, ez, this.doorOpen)) return false;
+    const d = Math.hypot(flat, dy);
+    const cp = Math.cos(p.pitch || 0);
+    const lx = Math.sin(p.yaw) * cp, ly = Math.sin(p.pitch || 0), lz = Math.cos(p.yaw) * cp;
+    const ang = Math.acos(Math.max(-1, Math.min(1, (lx * dx + ly * dy + lz * dz) / d)));
+    // head-sized target, plus slack for network latency on a moving target
+    const tol = Math.atan2(0.3, d) + 0.04 + Math.min(0.12, (this.speed * 0.15) / d);
+    return ang < tol;
+  }
+
+  // Returns true while the stun owns this tick.
+  updateBlind(dt) {
+    if (this.blindTimer > 0) {
+      this.blindTimer -= dt;
+      this.speed = 0; this.anim = 'blind';
+      this.yaw = wrap(this.yaw + Math.sin(this.blindTimer * 7) * dt * 1.5);
+      for (const [id, a] of this.awareness) this.awareness.set(id, Math.max(0, a - 0.25 * dt));
+      if (this.blindTimer <= 0) this.endBlind();
+      return true;
+    }
+    if (this.blindCooldown > 0) { this.blindCooldown = Math.max(0, this.blindCooldown - dt); this.aimTime.clear(); return false; }
+    if (this.state === 'scripted' || (this.action && this.action.type === 'kill')) { this.aimTime.clear(); return false; }
+    for (const p of this.room.alivePlayers()) {
+      if (!this.beamInEyes(p)) { this.aimTime.delete(p.id); continue; }
+      const t = (this.aimTime.get(p.id) || 0) + dt;
+      this.aimTime.set(p.id, t);
+      if (t >= BLIND.aimTime) { this.blind(p); return true; }
+    }
+    return false;
+  }
+
+  blind(p) {
+    this.blindTimer = BLIND.duration;
+    this.aimTime.clear();
+    // a blinding beam interrupts door-opening and locker checks (but not a kill)
+    if (this.action && this.action.type !== 'kill') this.action = null;
+    this.wasChasing = this.state === 'chase';
+    this.speed = 0; this.anim = 'blind';
+    this.room.broadcastEvent({ type: 'ceo', what: 'blind', by: p.id, dur: BLIND.duration, form: this.form });
+    this.room.noiseSound(this.x, this.z, this.form === 'monster' ? 'screech' : 'gasp');
+  }
+
+  endBlind() {
+    this.blindTimer = 0;
+    this.blindCooldown = BLIND.cooldown;
+    // he comes to his senses disoriented: whoever he was tracking gets a head start
+    for (const [id, a] of this.awareness) this.awareness.set(id, Math.min(a, 0.35));
+    this.room.broadcastEvent({ type: 'ceo', what: 'unblind', cooldown: BLIND.cooldown });
+    const lk = this.lastKnown || { x: this.x, z: this.z };
+    if (this.wasChasing || this.state === 'chase' || this.state === 'search') this.startSearch(lk.x, lk.z);
+    else if (this.state === 'investigate') this.startSearch(this.x, this.z);
+    this.wasChasing = false;
+  }
+
   checkHideSpot(spotId, certain = false) {
     if (this.checkedSpots.has(spotId) && !certain) return;
     this.checkedSpots.add(spotId);
@@ -440,8 +540,8 @@ export class CEO {
       if (p.hidden || p.invuln > 0) continue;
       const d = Math.hypot(p.x - this.x, p.z - this.z);
       if (d < this.cfg.catchRange && Math.abs(p.y) < 1.4 && this.grid.lineOfSight(this.x, this.z, p.x, p.z, this.doorOpen)) {
-        // Can't reach players inside vents
-        if (this.grid.cell(toTile(p.x), toTile(p.z)) === C.VENT) continue;
+        // Can't reach players inside vents (unless he crawls in after them on Hard)
+        if (!this.grid.ceoVents && this.grid.cell(toTile(p.x), toTile(p.z)) === C.VENT) continue;
         this.room.killPlayer(p, 'ceo');
         this.doAction({ type: 'kill', face: p }, 2.6);
         return;
@@ -467,9 +567,9 @@ export class CEO {
     // Door handling: if the next waypoint (or the tile we're entering) is a closed door, open it first.
     const ahead = this.doorAhead(wp);
     if (ahead) {
-      if (!this.floor.ceoCanPass(ahead.id)) { this.path = null; return false; }
+      if (!this.doorPassable(ahead.id)) { this.path = null; return false; }
       if (!this.floor.isDoorOpen(ahead.id)) {
-        this.doAction({ type: 'door', door: ahead.id, face: ahead }, this.floor.doors.get(ahead.id)?.heavy ? 1.2 : 0.7);
+        this.doAction({ type: 'door', door: ahead.id, face: ahead }, (this.floor.doors.get(ahead.id)?.heavy ? 1.2 : 0.7) * (this.cfg.doorTime || 1));
         return true;
       }
     }
@@ -480,7 +580,9 @@ export class CEO {
     this.turnTo({ x: wp.x, z: wp.z }, dt, this.state === 'chase' ? 7 : 4);
     // Slow down for sharp turns so he rounds corners naturally.
     const turnPenalty = Math.max(0.35, Math.cos(Math.min(Math.PI / 2, Math.abs(wrap(target - this.yaw)))));
-    const want = maxSpeed * turnPenalty;
+    // squeezing through a vent (Hard only) is slower than running
+    const inVent = this.grid.cell(toTile(this.x), toTile(this.z)) === C.VENT || this.grid.cell(toTile(wp.x), toTile(wp.z)) === C.VENT;
+    const want = maxSpeed * turnPenalty * (inVent ? 0.6 : 1);
     this.speed += Math.sign(want - this.speed) * Math.min(Math.abs(want - this.speed), dt * (this.state === 'chase' ? 7 : 3));
     const step = Math.min(d, this.speed * dt);
     this.x += (dx / d) * step;

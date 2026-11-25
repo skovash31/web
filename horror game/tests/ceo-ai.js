@@ -84,6 +84,7 @@ export function runCeoTests() {
     ok(chasedAt !== null, `spots a player with a flashlight 16 m down the corridor and gives chase (${chasedAt?.toFixed(2)} s)`);
     let caught = false;
     delete w.ceo.look;
+    p.flashlight = false; // (a beam in his eyes would blind him — tested separately)
     sim(w, 10, () => { if (!p.alive) { caught = true; return true; } });
     ok(caught && w.room.events.some((e) => e.type === 'death'), 'catches and kills a stationary player');
   }

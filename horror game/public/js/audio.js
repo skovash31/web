@@ -388,6 +388,10 @@ export class Audio {
       case 'carDoorOpen': this.noise({ type: 'bandpass', freq: 1500, q: 3, dur: 0.12, gain: 0.4, verb: 0.2 }); break;
       case 'keys': for (let i = 0; i < 4; i++) this.tone({ type: 'triangle', freq: 3000 + Math.random() * 2000, dur: 0.08, gain: 0.05, delay: i * 0.07 }); break;
       case 'stepOutside': this.noise({ type: 'bandpass', freq: 1400, q: 1.2, dur: 0.07, gain: 0.25, verb: 0.05 }); break;
+      case 'screech': this.tone({ type: 'sawtooth', freq: 900, freqEnd: 1700, dur: 0.9, gain: 0.35, at: A, verb: 0.8, attack: 0.02 }); this.tone({ type: 'square', freq: 1310, freqEnd: 600, dur: 1.3, gain: 0.18, at: A, verb: 0.8, delay: 0.15 }); this.noise({ type: 'bandpass', freq: 2400, freqEnd: 900, q: 1.5, dur: 1.4, gain: 0.6, at: A, verb: 0.8 }); break;
+      case 'gasp': this.noise({ type: 'bandpass', freq: 1100, freqEnd: 600, q: 1.2, dur: 0.5, gain: 0.5, at: A, verb: 0.4, attack: 0.02 }); this.tone({ type: 'triangle', freq: 330, freqEnd: 180, dur: 0.5, gain: 0.15, at: A }); break;
+      case 'stunReady': this.tone({ type: 'triangle', freq: 880, dur: 0.12, gain: 0.06 }); this.tone({ type: 'triangle', freq: 1320, dur: 0.18, gain: 0.06, delay: 0.1 }); break;
+      case 'ventBang': this.noise({ type: 'bandpass', freq: 600, q: 4, dur: 0.25, gain: 0.7, at: A, verb: 0.7 }); this.tone({ type: 'square', freq: 110, freqEnd: 70, dur: 0.2, gain: 0.25, at: A }); break;
       case 'thud': this.noise({ type: 'lowpass', freq: 250, dur: 0.35, gain: 1.2, at: A, verb: 0.8 }); this.tone({ freq: 55, freqEnd: 30, dur: 0.3, gain: 0.6, at: A }); break;
       default: break;
     }
