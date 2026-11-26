@@ -1,0 +1,15 @@
+{
+  "floorIndex": 1,
+  "journal": [],
+  "carry": {
+    "A": [],
+    "B": [
+      {
+        "kind": "coffee",
+        "name": "Cup of coffee"
+      }
+    ]
+  },
+  "levelName": "Restricted Archives",
+  "savedAt": 1795718794925
+}
