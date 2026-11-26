@@ -678,6 +678,8 @@ function useHeld(which) {
       me.useHandAnim(which); audio.play('medkit'); net.emit('useItem', it.id); break;
     case 'coffee':
       me.useHandAnim(which); net.emit('useItem', it.id); break;
+    case 'nothing':
+      me.kickHand(which); net.emit('useItem', it.id); break;
     default: ui.message('Use it on something nearby with E.', 1.6, true);
   }
 }

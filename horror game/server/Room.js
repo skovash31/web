@@ -7,7 +7,8 @@ import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY
 import { toTile, C, tileCenter } from '../shared/grid.js';
 import { saveCheckpoint } from './saves.js';
 
-const CARRY_KINDS = new Set(['battery', 'medkit', 'stapler', 'staples', 'coffee']);
+const CARRY_KINDS = new Set(['battery', 'medkit', 'stapler', 'staples', 'coffee', 'nothing']);
+const NOTHING_LINES = ['Nothing happens.', 'Nothing happened.', 'Still nothing.', 'It did nothing. As advertised.', 'Click. Nothing.', 'You feel exactly the same.'];
 // item fields that travel with carried items between floors
 const carryOf = (it) => ({ kind: it.kind, name: it.name, ...(it.ammo !== undefined ? { ammo: it.ammo } : {}), ...(it.count !== undefined ? { count: it.count } : {}) });
 const extrasOf = (c) => ({ ...(c.ammo !== undefined ? { ammo: c.ammo } : {}), ...(c.count !== undefined ? { count: c.count } : {}) });
@@ -316,6 +317,10 @@ export class Room {
       p.socket.emit('medkit', { health: p.health });
       this.noiseSound(p.x, p.z, 'medkit');
       this.tell(p, 'You patch yourself up and catch your breath.');
+    } else if (it.kind === 'nothing') {
+      // It does nothing. Only the presser hears the click; Mr. Thatch doesn't.
+      p.socket.emit('ev', { type: 'sound', name: 'nothing' });
+      return this.tell(p, NOTHING_LINES[Math.floor(Math.random() * NOTHING_LINES.length)]);
     } else if (it.kind === 'coffee') {
       p.inventory.splice(idx, 1); it.state = 'used';
       p.boostUntil = Date.now() + COFFEE.duration * 1000;
@@ -554,7 +559,7 @@ export class Room {
     if (cmd.floor && LEVEL_BY_ID[cmd.floor]) { this.transitioning = false; this.changeFloor(cmd.floor); }
     if (cmd.flag && this.floor) this.floor.setFlag(cmd.flag);
     if (cmd.give && this.floor) { const it = this.floor.items.get(cmd.give); if (it) this.floor.pickup(p, it); }
-    const GIVE = { stapler: 'Heavy-duty stapler', staples: 'Box of staples', medkit: 'First-aid kit', coffee: 'Cup of coffee', battery: 'Battery' };
+    const GIVE = { stapler: 'Heavy-duty stapler', staples: 'Box of staples', medkit: 'First-aid kit', coffee: 'Cup of coffee', battery: 'Battery', nothing: 'Nothing Button' };
     if (cmd.giveKind && this.floor && GIVE[cmd.giveKind]) {
       const it = this.floor.createItem(cmd.giveKind, GIVE[cmd.giveKind], cmd.giveKind === 'stapler' ? { ammo: Number(cmd.ammo) || 0 } : cmd.giveKind === 'staples' ? { count: STAPLER.perBox } : {});
       it.state = 'world'; it.x = p.x; it.z = p.z; this.floor.syncItemEntity(it);

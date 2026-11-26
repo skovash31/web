@@ -77,6 +77,16 @@ export async function runOnlineItemTests() {
     ok(!a.got.battery, 'a battery you pick up waits in your inventory (no auto-load)');
     a.emit('useItem', find(a, 'battery').id); await waitFor(() => a.got.battery, 1000);
     ok(a.got.battery?.value === PLAYER.maxBattery && !find(a, 'battery'), 'loading a battery fills the flashlight');
+    // the Nothing Button
+    const btn = a.floor.state.items.filter((i) => i.kind === 'nothing');
+    ok(btn.length === 1 && b.floor.state.items.filter((i) => i.kind === 'nothing').length === 1, 'every floor has one Nothing Button, the same for both players');
+    a.emit('debug', { giveKind: 'nothing' }); await waitFor(() => find(a, 'nothing'), 1000);
+    const before = JSON.stringify(a.inv.items), evA = a.events.length, evB = b.events.length;
+    const gotBefore = JSON.stringify(a.got);
+    a.emit('useItem', find(a, 'nothing').id); await sleep(400);
+    const newA = a.events.slice(evA);
+    ok(JSON.stringify(a.inv.items) === before && JSON.stringify(a.got) === gotBefore, 'pressing the Nothing Button changes nothing: inventory, health, stamina, battery all the same');
+    ok(newA.every((e) => (e.type === 'sound' && e.name === 'nothing') || (e.type === 'msg' && e.private)) && b.events.length === evB, 'it only clicks for the presser (no noise for Mr. Thatch, nothing for teammates)');
     // other items drop normally
     a.emit('debug', { giveKind: 'coffee' }); await waitFor(() => find(a, 'coffee'), 1000);
     const c2 = find(a, 'coffee');

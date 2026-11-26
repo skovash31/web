@@ -56,6 +56,7 @@ export const ITEM_INFO = {
   stapler: { label: 'Stapler', icon: 'stapler' },
   flashlight: { label: 'Flashlight', icon: 'flashlight' },
   coffee: { label: 'Cup of coffee', icon: 'coffee' },
+  nothing: { label: 'Nothing Button', icon: 'nothing' },
   staples: { label: 'Box of staples', icon: 'staples' },
 };
 

@@ -353,6 +353,17 @@ export function buildItem(kind, key) {
     case 'file': case 'report': box(g, 0.24, 0.025, 0.32, kind === 'file' ? new THREE.MeshStandardMaterial({ color: 0xd8b85a }) : 'paper', 0, 0.012, 0); break;
     case 'fuse': cyl(g, 0.025, 0.12, 'ledAmber', 0, 0.03, 0, { rz: Math.PI / 2 }); cyl(g, 0.03, 0.025, 'metal', 0.06, 0.03, 0, { rz: Math.PI / 2 }); cyl(g, 0.03, 0.025, 'metal', -0.06, 0.03, 0, { rz: Math.PI / 2 }); g.scale.setScalar(1.6); break;
     case 'specimen': cyl(g, 0.07, 0.22, 'specimen', 0, 0.11, 0); cyl(g, 0.075, 0.03, 'darkmetal', 0, 0.23, 0); break;
+    case 'nothing': {
+      box(g, 0.12, 0.035, 0.12, new THREE.MeshStandardMaterial({ color: 0x3a3c40, roughness: 0.6, metalness: 0.3 }), 0, 0.0175, 0);
+      cyl(g, 0.045, 0.012, new THREE.MeshStandardMaterial({ color: 0x9a9ca0, metalness: 0.7, roughness: 0.3 }), 0, 0.041, 0);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.038, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xc81a1a, roughness: 0.25, emissive: 0x400404 }));
+      dome.position.y = 0.047; g.add(dome);
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.022), new THREE.MeshBasicMaterial({ map: textTexture('NOTHING', { w: 256, h: 56, bg: '#e8e4d8', fg: '#1a1a1a', font: 'bold 40px Arial' }) }));
+      label.rotation.x = -0.35; label.position.set(0, 0.026, 0.061); // on the front edge of the base
+      g.add(label);
+      g.scale.setScalar(1.6);
+      break;
+    }
     case 'stapler': { const m = makeStapler(); if (m) { m.root.scale.setScalar(1.6); m.root.rotation.y = 0.6; g.add(m.root); } break; }
     case 'staples': { const m = makeStaplesBox(); if (m) { m.scale.setScalar(1.6); m.rotation.y = -0.4; g.add(m); } break; }
     default: box(g, 0.15, 0.15, 0.15, 'yellow', 0, 0.075, 0);

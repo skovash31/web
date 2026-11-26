@@ -26,6 +26,7 @@ You have two hands. The **main hand** (right of the screen) holds the selected h
 - **First-aid kit**: right click (or left click) while holding it: +60 health, full stamina, no more exhaustion.
 - **Coffee** (found on desks: 2 in the office, 1 per sublevel): 20 seconds of running 35% faster without using stamina. It carries between floors.
 - The stapler can be used from either hand (left click main, right click off hand).
+- **Nothing Button**: one per floor, somewhere random. Press it (left click). It does nothing.
 
 ## Story
 1. **The workday.** Clock in, print and deliver the quarterly report, file folders. Delivering the report brings out **Mr. Thatch, the CEO, in his human form** to introduce himself.

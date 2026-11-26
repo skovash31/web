@@ -20,6 +20,7 @@ const PICKUP_KIND = {
   staples: ['A box of staples. Twenty in a strip.', 'More staples. Keep them coming.'],
   coffee: ["Someone's coffee. Still warm... I'm not asking.", 'More coffee. Bless whoever left this.'],
   flashlight: ['My flashlight.'],
+  nothing: ['A big red button labelled "NOTHING". Of course I\'m taking it.', 'Another Nothing Button. Now I can do nothing twice.'],
 };
 const READ = {
   memo_pruitt: "'Nominees should not be informed'... nominated for what?",

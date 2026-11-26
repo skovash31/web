@@ -188,6 +188,8 @@ export class Floor {
     place('stapler', 'Heavy-duty stapler', { ammo: 0 });
     const boxes = this.level.index === 0 ? 1 : 2;
     for (let i = 0; i < boxes; i++) place('staples', 'Box of staples', { count: STAPLER.perBox });
+    // the Nothing Button: it does nothing
+    place('nothing', 'Nothing Button', {});
     // coffee is left on desks (any low furniture if a floor has no free desk)
     const cups = this.level.index === 0 ? 2 : 1;
     for (let i = 0; i < cups; i++) {

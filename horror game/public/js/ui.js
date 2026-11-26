@@ -3,7 +3,7 @@ import { PLAYER_COLORS, ITEM_INFO, DIFFICULTIES } from '../shared/constants.js';
 
 const $ = (id) => document.getElementById(id);
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
-const ICON = { keycard: '💳', battery: '🔋', medkit: '✚', file: '📁', report: '📄', fuse: '⚡', specimen: '🧪', tape: '📼', stapler: '🗜️', staples: '📎', flashlight: '🔦', coffee: '☕' };
+const ICON = { keycard: '💳', battery: '🔋', medkit: '✚', file: '📁', report: '📄', fuse: '⚡', specimen: '🧪', tape: '📼', stapler: '🗜️', staples: '📎', flashlight: '🔦', coffee: '☕', nothing: '🔴' };
 
 export class UI {
   constructor() {
