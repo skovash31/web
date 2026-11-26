@@ -2,261 +2,105 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Drag & Drop Site Builder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log in</title>
 <style>
-:root{color-scheme:dark;--bg:#0f1117;--pn:#171a23;--ln:#2a2f3d;--tx:#e6e8ef;--mu:#8b93a7;--ac:#7c9cff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font:13px system-ui,sans-serif}
-body{display:flex;flex-direction:column}
-header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--pn);border-bottom:1px solid var(--ln)}
-button,input,select{background:#222736;color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:6px 10px;font-size:13px}
-button{cursor:pointer}button:hover{border-color:var(--ac)}
-.sp{flex:1}
-main{flex:1;display:flex;min-height:0}
-aside{width:200px;background:var(--pn);padding:10px;overflow:auto;display:flex;flex-direction:column;gap:8px}
-aside.r{width:230px}
-h3{margin:8px 0 2px;font-size:11px;text-transform:uppercase;color:var(--mu);letter-spacing:.08em}
-.pal{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.pal button,.pg{width:100%;text-align:left}
-.pg.on{border-color:var(--ac);color:var(--ac)}
-.as{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.as img{width:100%;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--ln);cursor:grab}
-#wrap{flex:1;overflow:auto;padding:20px;background:#0b0d12}
-#sz{margin:0 auto;position:relative}#cv{position:absolute;left:0;top:0;transform-origin:0 0;touch-action:none;width:900px;height:600px;background:#fff;box-shadow:0 0 0 1px var(--ln),0 20px 60px #000a;overflow:hidden}
-.el{position:absolute;cursor:move;user-select:none;touch-action:none;overflow:hidden}
-.el.sel{outline:2px solid var(--ac)}
-.el img{width:100%;height:100%;object-fit:cover;pointer-events:none;display:block}
-.rz{position:absolute;right:0;bottom:0;width:22px;height:22px;background:var(--ac);cursor:nwse-resize}
-.pv .el{cursor:default}.pv .el.lk{cursor:pointer}
-label{display:flex;flex-direction:column;gap:3px;color:var(--mu);font-size:11px}
-label input,label select{width:100%}
-.hint{color:var(--mu);font-size:12px}
-#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#222736;border:1px solid var(--ln);padding:10px 14px;border-radius:8px;z-index:9;display:none;max-width:90vw}
-@media(max-width:800px){header{flex-wrap:wrap}.hint{display:none}main{flex-direction:column;overflow-y:auto}aside,aside.r{width:100%;flex:none}#wrap{flex:none;padding:12px;order:-1}input,select,button{font-size:16px}.as img{height:70px}.pal{grid-template-columns:repeat(4,1fr)}}
+  :root { --bg: #000; --card: #282929; --field: #e5e9ff; --text: #fff; --ink: #222; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, sans-serif;
+  }
+  main {
+    width: min(360px, 92vw);
+    padding: 36px 32px;
+    background: var(--card);
+    border-radius: 14px;
+  }
+  h1 { margin: 0 0 28px; font-size: 24px; font-weight: 700; text-align: center; }
+  form { display: grid; gap: 18px; }
+  label { display: grid; gap: 8px; font-size: 14px; }
+  input, button {
+    width: 100%;
+    height: 44px;
+    border-radius: 8px;
+    font: inherit;
+    font-size: 16px;
+  }
+  input { padding: 0 12px; border: 0; background: var(--field); color: var(--ink); }
+  button { border: 0; cursor: pointer; font-weight: 600; }
+  .primary { margin-top: 6px; background: var(--field); color: var(--ink); }
+  .error { margin: 12px 0 0; min-height: 18px; font-size: 13px; color: #ff8a8a; text-align: center; }
+  .divider { margin: 22px 0; text-align: center; font-size: 13px; opacity: .6; }
+  .google { background: transparent; color: var(--field); border: 1px solid #5a5c5c; font-weight: 500; }
+  .signup { margin: 24px 0 0; font-size: 13px; text-align: center; opacity: .85; }
+  a { color: var(--field); }
+  input:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--field); outline-offset: 2px; }
 </style>
 </head>
 <body>
-<header>
-<b>🧱 Site Builder</b>
-<button id="pv">▶ Preview</button>
-<button id="ex">⬇ Export HTML</button>
-<button id="im">⬆ Import</button>
-<label style="flex-direction:row;align-items:center;gap:4px"><input type="checkbox" id="rep">Replace</label><input type="file" id="imf" accept=".html,.htm,.zip,image/*" multiple hidden>
-<button id="zp">📦 Download .zip</button>
-<button id="del">🗑 Delete</button>
-<span class="sp"></span>
-<span class="hint">Drag to move · corner to resize · Del removes</span>
-</header>
-<main>
-<aside>
-<h3>Add</h3>
-<div class="pal">
-<button data-add="text">Text</button><button data-add="button">Button</button>
-<button data-add="box">Box</button><button data-add="heading">Heading</button>
-</div>
-<h3>Assets</h3>
-<input type="file" id="up" accept="image/*" multiple>
-<div class="as" id="as"></div>
-<div class="hint">Click or drag an asset onto the page.</div>
-<h3>Pages</h3>
-<div id="pgs"></div>
-<button id="np">+ New page</button>
-</aside>
-<div id="wrap"><div id="sz"><div id="cv"></div></div></div>
-<aside class="r" id="pp"></aside>
-</main>
-<div id="toast"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script>
-const $=s=>document.querySelector(s);
-let pages=[{name:'Home',bg:'#ffffff',els:[]}],cp=0,sel=null,assets=[],prev=false,uid=1;
-const cv=$('#cv'),sz=$('#sz');let SC=1;function fit(){const w=$('#wrap').clientWidth-24;SC=Math.min(1,Math.max(.2,w/900));sz.style.width=900*SC+'px';sz.style.height=600*SC+'px';cv.style.transform='scale('+SC+')'}addEventListener('resize',fit);
-const P=()=>pages[cp];
-const E=()=>P().els.find(e=>e.id===sel);
-function mk(type,x=60,y=60,src=''){
- const d={text:{w:200,h:40,text:'Text here',color:'#222',bg:'',size:18},
-  heading:{w:400,h:60,text:'Big Heading',color:'#111',bg:'',size:40},
-  button:{w:140,h:44,text:'Click me',color:'#fff',bg:'#4f6bff',size:16},
-  box:{w:200,h:120,text:'',color:'#222',bg:'#e5e9ff',size:16},
-  image:{w:240,h:160,text:'',color:'',bg:'',size:16}}[type];
- const e={id:uid++,type,x,y,src,link:'',...d};P().els.push(e);sel=e.id;draw();
-}
-function linkOf(l){if(!l)return null;return l}
-function draw(){
- fit();cv.className=prev?'pv':'';cv.style.background='';cv.style.backgroundColor=P().bg;cv.style.backgroundImage=P().bgImg?'url('+P().bgImg+')':'none';cv.style.backgroundSize='cover';cv.style.backgroundPosition='center';cv.innerHTML='';
- P().els.forEach(e=>{
-  const n=document.createElement('div');
-  n.className='el'+(e.id===sel&&!prev?' sel':'')+(e.link?' lk':'');
-  Object.assign(n.style,{left:e.x+'px',top:e.y+'px',width:e.w+'px',height:e.h+'px',color:e.color,background:e.bg,fontSize:e.size+'px',display:'flex',alignItems:'center',justifyContent:e.type==='button'?'center':'flex-start',borderRadius:e.type==='button'?'8px':'0',fontWeight:e.type==='button'||e.type==='heading'?'700':'400'});
-  if(e.type==='image'){const i=document.createElement('img');i.src=e.src;n.appendChild(i)}else n.textContent=e.text;
-  if(prev){n.onclick=()=>go(e.link)}
-  else{
-   n.onpointerdown=ev=>{ev.preventDefault();sel=e.id;const x0=e.x,y0=e.y;
-    const mv=m=>{e.x=Math.round(x0+(m.clientX-ev.clientX)/SC);e.y=Math.round(y0+(m.clientY-ev.clientY)/SC);n.style.left=e.x+'px';n.style.top=e.y+'px'};
-    const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up);draw()};
-    addEventListener('pointermove',mv);addEventListener('pointerup',up);panel()};
-   if(e.id===sel){const r=document.createElement('div');r.className='rz';
-    r.onpointerdown=ev=>{ev.stopPropagation();ev.preventDefault();const w0=e.w,h0=e.h;
-     const mv=m=>{e.w=Math.max(20,Math.round(w0+(m.clientX-ev.clientX)/SC));e.h=Math.max(20,Math.round(h0+(m.clientY-ev.clientY)/SC));n.style.width=e.w+'px';n.style.height=e.h+'px'};
-     const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up);panel()};
-     addEventListener('pointermove',mv);addEventListener('pointerup',up)};n.appendChild(r)}
-  }
-  cv.appendChild(n);
- });
- pagesUI();panel();
-}
-function go(l){if(!l)return;if(l.startsWith('page:')){const i=pages.findIndex(p=>p.name===l.slice(5));if(i>=0){cp=i;draw()}}else window.open(l.slice(4),'_blank')}
-function pagesUI(){
- $('#pgs').innerHTML='';
- pages.forEach((p,i)=>{const b=document.createElement('button');b.className='pg'+(i===cp?' on':'');b.textContent=p.name;
-  b.onclick=()=>{cp=i;sel=null;draw()};b.ondblclick=()=>{const n=prompt('Rename page',p.name);if(n){pages.forEach(q=>q.els.forEach(e=>{if(e.link==='page:'+p.name)e.link='page:'+n}));p.name=n;draw()}};
-  $('#pgs').appendChild(b)});
-}
-let keep=false;
-function panel(){
- if(keep)return;
- const e=E(),pp=$('#pp');
- if(prev){pp.innerHTML='<div class="hint">Preview mode. Click linked items to navigate.</div>';return}
- if(!e){pp.innerHTML='<h3>Page</h3><label>Background color<input type="color" id="pbg" value="'+P().bg+'"></label><label>Background image<select id="pbi"><option value="">None</option>'+assets.map((a,i)=>`<option value="${i}" ${P().bgImg===a?'selected':''}>Asset ${i+1}</option>`).join('')+'</select></label><label>…or upload one<input type="file" id="pbu" accept="image/*"></label><div class="hint">Select an item to edit it.</div>';$('#pbg').oninput=v=>{P().bg=v.target.value;cv.style.backgroundColor=P().bg};$('#pbi').onchange=v=>{P().bgImg=v.target.value===''?'':assets[+v.target.value];draw()};$('#pbu').onchange=v=>{const f=v.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{assets.push(r.result);P().bgImg=r.result;assetsUI();draw()};r.readAsDataURL(f)};return}
- const opts=['<option value="">No link</option>',...pages.map(p=>`<option value="page:${p.name}" ${e.link==='page:'+p.name?'selected':''}>Page: ${p.name}</option>`)].join('');
- const url=e.link.startsWith('url:')?e.link.slice(4):'';
- pp.innerHTML=`<h3>${e.type}</h3>
- ${e.type!=='image'&&e.type!=='box'?`<label>Text<input id="f_text" value="${e.text.replace(/"/g,'&quot;')}"></label>`:''}
- <label>Links to page<select id="f_pg">${opts}</select></label>
- <label>…or web URL<input id="f_url" placeholder="https://" value="${url}"></label>
- ${e.type!=='image'?`<label>Text color<input type="color" id="f_color" value="${e.color||'#222222'}"></label>
- <label>Background<input type="color" id="f_bg" value="${e.bg||'#ffffff'}"></label><button id="f_clr">${e.bg?'Make background clear':'Background is clear'}</button>
- <label>Font size<input type="number" id="f_size" value="${e.size}"></label>`:''}
- <label>X<input type="number" id="f_x" value="${e.x}"></label><label>Y<input type="number" id="f_y" value="${e.y}"></label>
- <label>W<input type="number" id="f_w" value="${e.w}"></label><label>H<input type="number" id="f_h" value="${e.h}"></label>`;
- const bind=(id,fn)=>{const n=$('#'+id);if(n)n.oninput=()=>{fn(n.value);draw2()}};
- const draw2=()=>{keep=true;try{draw()}finally{keep=false}};
- bind('f_text',v=>e.text=v);bind('f_color',v=>e.color=v);bind('f_bg',v=>e.bg=v);bind('f_size',v=>e.size=+v);
- bind('f_x',v=>e.x=+v);bind('f_y',v=>e.y=+v);bind('f_w',v=>e.w=+v);bind('f_h',v=>e.h=+v);
- if($('#f_clr'))$('#f_clr').onclick=()=>{e.bg='';draw()};
- $('#f_pg').onchange=ev=>{e.link=ev.target.value;$('#f_url').value='';draw()};
- $('#f_url').oninput=ev=>{e.link=ev.target.value?'url:'+ev.target.value:'';draw2()};
-}
-document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>mk(b.dataset.add));
-$('#up').onchange=ev=>{[...ev.target.files].forEach(f=>{const r=new FileReader();r.onload=()=>{assets.push(r.result);assetsUI()};r.readAsDataURL(f)});ev.target.value=''};
-function assetsUI(){
- $('#as').innerHTML='';
- assets.forEach(a=>{const i=document.createElement('img');i.src=a;i.draggable=true;
-  i.onclick=()=>mk('image',60,60,a);i.ondragstart=e=>e.dataTransfer.setData('text/plain',String(assets.indexOf(a)));$('#as').appendChild(i)});
-}
-cv.ondragover=e=>e.preventDefault();
-cv.ondrop=e=>{e.preventDefault();const a=assets[+e.dataTransfer.getData('text/plain')];if(!a)return;const r=cv.getBoundingClientRect();mk('image',Math.round((e.clientX-r.left)/SC-120),Math.round((e.clientY-r.top)/SC-80),a)};
-const toHex=(()=>{const x=document.createElement('canvas').getContext('2d');return c=>{if(!c||c==='transparent')return'';x.fillStyle='#000';x.fillStyle=c;const v=x.fillStyle;return v[0]==='#'?v:''}})();
-const MIME={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml'};
-const rd=f=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
-function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',6000)}
-async function readFiles(list){
- const htmls=[],imgs={};
- for(const f of list){
-  const ext=(f.name.split('.').pop()||'').toLowerCase();
-  if(ext==='zip'){
-   if(!window.JSZip){toast('Zip support did not load.');continue}
-   const z=await JSZip.loadAsync(f);
-   for(const p of Object.keys(z.files)){
-    const zf=z.files[p];if(zf.dir||p.startsWith('__MACOSX'))continue;
-    const e=p.split('.').pop().toLowerCase(),b=p.split('/').pop();
-    if(e==='html'||e==='htm')htmls.push({name:b,text:await zf.async('string')});
-    else if(MIME[e])imgs[p]=imgs[b]='data:'+MIME[e]+';base64,'+await zf.async('base64');
-   }
-  }else if(ext==='html'||ext==='htm')htmls.push({name:f.name,text:await f.text()});
-  else if(MIME[ext])imgs[f.name]=await rd(f);
- }
- return{htmls,imgs};
-}
-function resolver(imgs,R){return s=>{if(!s)return'';if(/^(data:|https?:|blob:)/i.test(s))return s;let k=s.replace(/^(\.\/)+/,'').split(/[?#]/)[0];try{k=decodeURIComponent(k)}catch(e){}const v=imgs[k]||imgs[k.split('/').pop()];if(!v)R.miss++;return v||''}}
-function linkFrom(el,names){
- const g=el.getAttribute('data-go');if(g!=null)return'page:'+(names[g]||g);
- const u=el.getAttribute('data-url');if(u)return'url:'+u;
- const h=el.tagName==='A'?el.getAttribute('href'):'';
- return h&&!/^javascript:/i.test(h)?'url:'+h:'';
-}
-const uniq=(ex,n)=>{while(ex.has(n))n+=' (imported)';ex.add(n);return n};
-function parseBuilder(secs,rs,ex){
- const names={};secs.forEach(s=>{names[s.dataset.n]=uniq(ex,s.dataset.n)});
- return secs.map(s=>{
-  const bi=(s.style.backgroundImage.match(/url\(["']?(.*?)["']?\)/)||[])[1];
-  const pg={name:names[s.dataset.n],bg:toHex(s.style.backgroundColor)||'#ffffff',bgImg:bi?rs(bi):'',els:[]};
-  [...s.children].forEach(d=>{
-   const st=d.style,img=d.querySelector('img'),px=v=>parseInt(v)||0;
-   const e={id:uid++,x:px(st.left),y:px(st.top),w:px(st.width)||100,h:px(st.height)||40,color:toHex(st.color)||'#222222',bg:toHex(st.backgroundColor),size:px(st.fontSize)||16,text:img?'':d.textContent.trim(),src:'',link:linkFrom(d,names)};
-   if(img){e.type='image';e.src=rs(img.getAttribute('src'))}
-   else if(st.borderRadius)e.type='button';
-   else if(st.fontWeight==='700'||st.fontWeight==='bold')e.type='heading';
-   else if(!e.text)e.type='box';
-   else e.type='text';
-   pg.els.push(e)});
-  return pg})}
-function parseGeneric(doc,fname,rs,ex){
- const base=fname.replace(/\.html?$/i,'')||'Imported',pgs=[];
- const bg=toHex(doc.body.style.backgroundColor||doc.body.getAttribute('bgcolor'))||'#ffffff';
- let pg,y;
- const np=()=>{pg={name:uniq(ex,pgs.length?base+' '+(pgs.length+1):base),bg,els:[]};pgs.push(pg);y=30};
- const add=(type,o,h)=>{if(y+h>580&&pg.els.length)np();pg.els.push({id:uid++,type,x:40,y,w:820,h,color:'#222222',bg:'',size:16,text:'',src:'',link:'',...o});y+=h+14};
- const TXT=/^(P|LI|SPAN|LABEL|BLOCKQUOTE|PRE|TD|TH|FIGCAPTION|DT|DD|SMALL|STRONG|EM|B|I)$/;
- const clean=s=>s.replace(/\s+/g,' ').trim();
- const txt=t=>{if(t)add('text',{text:t},Math.max(30,Math.ceil(t.length*9/820)*26+8))};
- const walk=el=>{for(const c of el.children){
-  const T=c.tagName;
-  if(/^(SCRIPT|STYLE|NOSCRIPT|META|LINK|TITLE|HEAD|SVG|IFRAME|CANVAS|VIDEO|AUDIO)$/i.test(T))continue;
-  if(/^H[1-6]$/.test(T)){const t=clean(c.textContent);if(t)add('heading',{text:t,size:{H1:40,H2:32,H3:26}[T]||20,color:'#111111'},{H1:60,H2:50,H3:40}[T]||34)}
-  else if(T==='IMG'){const s=rs(c.getAttribute('src'));if(s)add('image',{src:s,w:300},200)}
-  else if(T==='BUTTON'||T==='A'){
-   const im=c.querySelector('img'),t=clean(c.textContent);
-   if(im&&!t){const s=rs(im.getAttribute('src'));if(s)add('image',{src:s,w:300,link:linkFrom(c,{})},200)}
-   else if(t)add('button',{text:t,w:Math.min(820,Math.max(120,t.length*12+40)),bg:'#4f6bff',color:'#ffffff',link:linkFrom(c,{})},44)}
-  else if(TXT.test(T))txt(clean(c.textContent));
-  else{txt(clean([...c.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(' ')));walk(c)}
- }};
- np();walk(doc.body);return pgs}
-async function doImport(list){
- const {htmls,imgs}=await readFiles(list);
- if(!htmls.length){toast('Pick .html files or a .zip that contains them.');return}
- const R={miss:0},rs=resolver(imgs,R),rep=$('#rep').checked,ex=new Set(rep?[]:pages.map(p=>p.name)),added=[],fmap={};
- for(const h of htmls){
-  const doc=new DOMParser().parseFromString(h.text,'text/html'),secs=[...doc.querySelectorAll('section[data-n]')];
-  const ps=secs.length?parseBuilder(secs,rs,ex):parseGeneric(doc,h.name,rs,ex);
-  if(ps.length)fmap[h.name.toLowerCase()]=ps[0].name;added.push(...ps);
- }
- added.forEach(p=>p.els.forEach(e=>{if(e.link.startsWith('url:')){const k=e.link.slice(4).replace(/^(\.\/)+/,'').split(/[?#]/)[0].toLowerCase();if(fmap[k])e.link='page:'+fmap[k]}}));
- [...new Set(Object.values(imgs))].forEach(v=>{if(!assets.includes(v))assets.push(v)});assetsUI();
- if(rep)pages=added;else pages.push(...added);
- cp=pages.indexOf(added[0]);sel=null;draw();
- toast('Imported '+added.length+' page'+(added.length>1?'s':'')+(R.miss?' · '+R.miss+' image(s) not found: select the images or a .zip with them too':''));
-}
-$('#im').onclick=()=>$('#imf').click();
-$('#imf').onchange=async ev=>{const f=[...ev.target.files];ev.target.value='';try{await doImport(f)}catch(err){toast('Import failed: '+err.message)}};
-addEventListener('dragover',e=>e.preventDefault());
-addEventListener('drop',async e=>{e.preventDefault();const f=[...(e.dataTransfer.files||[])];if(f.length)try{await doImport(f)}catch(err){toast('Import failed: '+err.message)}});
-$('#np').onclick=()=>{const n=prompt('Page name','Page '+(pages.length+1));if(n){pages.push({name:n,bg:'#ffffff',els:[]});cp=pages.length-1;sel=null;draw()}};
-$('#del').onclick=()=>{if(sel){P().els=P().els.filter(e=>e.id!==sel);sel=null;draw()}};
-addEventListener('keydown',e=>{if(e.key==='Delete'&&!/INPUT|SELECT/.test(document.activeElement.tagName))$('#del').click()});
-$('#pv').onclick=()=>{prev=!prev;sel=null;$('#pv').textContent=prev?'✎ Edit':'▶ Preview';draw()};
-function buildHtml(){
- const secs=pages.map((p,i)=>`<section id="p${i}" data-n="${p.name}" style="display:${i?'none':'block'};position:relative;width:900px;height:600px;margin:0 auto;background:${p.bg}${p.bgImg?`;background-image:url(${p.bgImg});background-size:cover;background-position:center`:''};overflow:hidden">`+p.els.map(e=>{
-  const st=`position:absolute;left:${e.x}px;top:${e.y}px;width:${e.w}px;height:${e.h}px;color:${e.color};background:${e.bg};font-size:${e.size}px;display:flex;align-items:center;${e.type==='button'?'justify-content:center;border-radius:8px;font-weight:700;':''}${e.type==='heading'?'font-weight:700;':''}${e.link?'cursor:pointer;':''}`;
-  const at=e.link?(e.link.startsWith('page:')?` data-go="${e.link.slice(5)}"`:` data-url="${e.link.slice(4)}"`):'';
-  return `<div style="${st}"${at}>`+(e.type==='image'?`<img src="${e.src}" style="width:100%;height:100%;object-fit:cover">`:e.text)+'</div>'}).join('')+'</section>').join('\n');
- const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=900"><title>${pages[0].name}</title><style>body{margin:0;font-family:system-ui,sans-serif}</style></head><body>\n${secs}\n<script>document.addEventListener("click",function(e){var t=e.target.closest("[data-go],[data-url]");if(!t)return;if(t.dataset.url){location.href=t.dataset.url;return}document.querySelectorAll("section").forEach(function(s){s.style.display=s.dataset.n===t.dataset.go?"block":"none"})})<\/script></body></html>`;
- return html}
-async function dl(blob,name){try{const d=window.claude&&await claude.use('downloads');if(d){await d.save({filename:name,data:blob})}else{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click()}}catch(err){if(!err||err.code!=='declined')alert('Download failed: '+(err&&err.message||err))}}
-$('#ex').onclick=()=>dl(new Blob([buildHtml()],{type:'text/html'}),'index.html');
-$('#zp').onclick=()=>{
- const z=new JSZip(),seen={};let n=0;
- const html=buildHtml().replace(/data:image\/([a-z0-9.+-]+);base64,([A-Za-z0-9+\/=]+)/g,(m,ext,b64)=>{
-  if(seen[m])return seen[m];
-  const name='assets/img'+(++n)+'.'+ext.replace('jpeg','jpg').replace('svg+xml','svg');
-  z.file(name,b64,{base64:true});seen[m]=name;return name});
- z.file('index.html',html);
- z.generateAsync({type:'blob'}).then(b=>dl(b,'website.zip'));
-};
-mk('heading',60,50);P().els[0].text='My Website';mk('button',60,140);P().els[1].text='Go to About';sel=null;
-pages.push({name:'About',bg:'#f3f4ff',els:[]});P().els[1].link='page:About';draw();
-</script>
+  <main>
+    <h1>Log in</h1>
+    <form id="loginForm">
+      <label>Email <input type="email" name="user" autocomplete="email" required></label>
+      <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+      <button class="primary" type="submit">Log in</button>
+    </form>
+    <p class="divider">or</p>
+    <button class="google" id="googleBtn" type="button">Sign in with Google</button>
+    <p class="error" id="error" role="alert"></p>
+    <p class="signup">Don't have an account? <a href="signup.html">Sign up</a></p>
+  </main>
+
+  <script type="module">
+    import {
+      GoogleAuthProvider,
+      signInWithEmailAndPassword,
+      signInWithPopup,
+      auth
+    } from "./accounts/firebase.js";
+    const accountKey = 'birdQuestXAccount';
+
+    function rememberAccount(user) {
+      const userName = user.displayName || user.email || 'Player';
+      localStorage.setItem(accountKey, JSON.stringify({
+        username: userName,
+        playerId: user.uid,
+        uid: user.uid,
+        loggedIn: true
+      }));
+    }
+
+    const errorBox = document.getElementById('error');
+    document.getElementById('loginForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorBox.textContent = '';
+      const email = document.querySelector('#loginForm input[name="user"]').value.trim();
+      const password = document.querySelector('#loginForm input[name="password"]').value;
+      try {
+        const credential = await signInWithEmailAndPassword(auth, email, password);
+        rememberAccount(credential.user);
+        location.href = 'mainpage.html';
+      } catch (err) {
+        errorBox.textContent = err.message.replace("Firebase: ", "");
+      }
+    });
+
+    document.getElementById("googleBtn").addEventListener("click", async () => {
+      errorBox.textContent = "";
+      try {
+        const credential = await signInWithPopup(auth, new GoogleAuthProvider());
+        rememberAccount(credential.user);
+        location.href = "mainpage.html";
+      } catch (err) {
+        errorBox.textContent = err.message.replace("Firebase: ", "");
+      }
+    });
+  </script>
 </body>
 </html>
