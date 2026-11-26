@@ -637,6 +637,9 @@ function refreshInventory() {
   ui.inventory(hot);
   const k = sel ? hot.findIndex((i) => i.id === sel) : -1;
   if (k >= 0 && k !== ui.selected) ui.select(k);
+  // the item you were holding is gone (used up, dropped, crumbled): keep that hand empty
+  // rather than letting the next item slide into it and get used by your next click
+  else if (sel && k < 0) ui.select(Math.min(7, hot.length));
   ui.offhand(offItem());
   syncHands();
 }
@@ -672,6 +675,8 @@ function toggleFlashlight() {
 }
 
 function useHeld(which) {
+  // empty main hand: a click uses whatever is in your off hand (the flashlight by default)
+  if (which === 'main' && !mainItem() && offItem()) which = 'off';
   const it = handItem(which);
   if (!it || me.hidden && it.kind !== 'flashlight') return;
   switch (it.kind) {

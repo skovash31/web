@@ -110,7 +110,7 @@ export class UI {
 
   inventory(items) {
     this.items = items;
-    if (this.selected >= Math.max(1, items.length)) this.selected = Math.max(0, items.length - 1);
+    this.selected = Math.max(0, Math.min(7, this.selected)); // an empty slot = empty hand
     const el = $('inventory');
     el.innerHTML = '';
     for (let i = 0; i < 8; i++) {
