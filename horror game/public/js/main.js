@@ -41,12 +41,20 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
 });
 
-const MOBILE = isMobile();
 const ui = new UI();
 const audio = new Audio();
-const input = new Input(canvas, { touch: MOBILE });
-const touch = MOBILE ? new TouchControls(input) : null;
-if (touch) { ui.touch = touch; touch.onPause = () => { if (G.phase === 'playing' && !ui.modal) ui.showModal('pause'); }; ui.onOffhandTap = () => input.press('KeyX'); }
+const input = new Input(canvas);
+const touch = new TouchControls(input);
+ui.touch = touch;
+touch.onPause = () => { if (G.phase === 'playing' && !ui.modal) ui.showModal('pause'); };
+ui.onOffhandTap = () => input.press('KeyX');
+// Touch controls are a menu option, not auto-detected — isMobile() only picks the
+// checkbox's default so phones/tablets start with it on, but anyone can flip it.
+const optTouch = document.getElementById('opt-touch');
+const storedTouch = localStorage.getItem('catinc.touch');
+function setTouchMode(on) { touch.setEnabled(on); localStorage.setItem('catinc.touch', on ? '1' : '0'); }
+setTouchMode(optTouch.checked = storedTouch !== null ? storedTouch === '1' : isMobile());
+optTouch.onchange = (e) => setTouchMode(e.target.checked);
 const world = new World(scene);
 const me = new LocalPlayer(camera, scene);
 const remotes = new Remotes(scene, audio, (x, z) => surfaceAt(x, z));

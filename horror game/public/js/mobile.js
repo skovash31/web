@@ -19,7 +19,6 @@ export class TouchControls {
   constructor(input) {
     this.input = input;
     this.onPause = null;
-    document.body.classList.add('touch');
     this.root = document.createElement('div');
     this.root.id = 'touch-controls';
     this.root.innerHTML = `
@@ -142,5 +141,12 @@ export class TouchControls {
     const el = this.root.querySelector('#tc-interact');
     el.classList.toggle('hidden', !text);
     el.textContent = text || '';
+  }
+
+  // Chosen on the menu, before joining a lobby — not auto-detected.
+  setEnabled(on) {
+    this.input.touch = on;
+    document.body.classList.toggle('touch', on);
+    this.root.classList.toggle('hidden', !on);
   }
 }
