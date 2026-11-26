@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>CAT INCORPORATED</title>
   <link rel="stylesheet" href="css/style.css" />
   <script type="importmap">
@@ -71,6 +71,7 @@
           <tr><td>Esc</td><td>Pause</td></tr>
         </table>
         <p class="hint">Tip: Ctrl+W closes browser tabs. The game enters fullscreen with keyboard lock to protect you — or just use <b>C</b> to crouch.</p>
+        <p class="hint touch-hint">On a phone or tablet: drag anywhere to look around, use the joystick (bottom left) to move, and the on-screen buttons for jump, flashlight, fire and everything else.</p>
       </details>
       <p class="hint">1–4 players. Share your room code with co-workers.</p>
     </div>
@@ -144,6 +145,7 @@
       <h3 id="note-title"></h3>
       <pre id="note-text"></pre>
       <p class="hint">[E] / [Esc] close</p>
+      <button id="note-close" class="small modal-close">Close</button>
     </div>
   </div>
   <div id="keypad" class="modal hidden">
@@ -151,6 +153,7 @@
       <div id="keypad-display">____</div>
       <div id="keypad-keys"></div>
       <p class="hint">Type digits or click. [Enter] submit · [Esc] cancel</p>
+      <button id="keypad-cancel" class="small modal-close">Cancel</button>
     </div>
   </div>
   <div id="journal" class="modal hidden">
@@ -158,6 +161,7 @@
       <h3>Team journal</h3>
       <div id="journal-list"></div>
       <p class="hint">[J] / [Esc] close</p>
+      <button id="journal-close" class="small modal-close">Close</button>
     </div>
   </div>
   <div id="pause" class="modal hidden">

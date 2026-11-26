@@ -19,6 +19,7 @@ import { Cutscenes } from './cutscene.js';
 import { Finale } from './ending.js';
 import { Music } from './music.js';
 import { StapleFX } from './staples.js';
+import { isMobile, TouchControls } from './mobile.js';
 
 // ---------------------------------------------------------------- setup
 const canvas = document.getElementById('game');
@@ -40,9 +41,12 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
 });
 
+const MOBILE = isMobile();
 const ui = new UI();
 const audio = new Audio();
-const input = new Input(canvas);
+const input = new Input(canvas, { touch: MOBILE });
+const touch = MOBILE ? new TouchControls(input) : null;
+if (touch) { ui.touch = touch; touch.onPause = () => { if (G.phase === 'playing' && !ui.modal) ui.showModal('pause'); }; ui.onOffhandTap = () => input.press('KeyX'); }
 const world = new World(scene);
 const me = new LocalPlayer(camera, scene);
 const remotes = new Remotes(scene, audio, (x, z) => surfaceAt(x, z));
@@ -97,6 +101,12 @@ $('btn-copy').onclick = () => navigator.clipboard?.writeText($('lobby-code').tex
 $('btn-start').onclick = async () => { audio.init(); lockPointer(); ui.screen('loading'); await modelsReady; net.emit('startGame'); };
 $('btn-leave').onclick = () => { net.emit('leaveRoom'); G.phase = 'menu'; ui.screen('menu'); };
 $('btn-resume').onclick = () => { ui.closeModal(); lockPointer(); };
+// Close/cancel buttons for the note, journal and keypad modals — the only way off them
+// without a keyboard (mirrors the E/J/Esc keyboard shortcuts below).
+const closeModalTap = () => { ui.closeModal(); if (!input.locked) lockPointer(); };
+$('note-close').onclick = closeModalTap;
+$('journal-close').onclick = closeModalTap;
+$('keypad-cancel').onclick = closeModalTap;
 $('btn-quit').onclick = () => { net.emit('leaveRoom'); location.reload(); };
 $('btn-ending').onclick = () => { audio.outdoor(false); $('ending').classList.add('hidden'); G.phase = 'lobby'; ui.screen('lobby'); world.dispose(); };
 $('sens').value = input.sens; $('sens').oninput = (e) => input.setSens(+e.target.value);
@@ -856,6 +866,7 @@ function frame(now) {
   if (G.phase === 'finale') { finale.update(dt); return; }
   if (G.phase !== 'playing' || !G.grid) return;
 
+  input.blocked = !!ui.modal;
   const inp = input.frame();
   const doorOpen = (id) => world.doorOpen(id);
 
