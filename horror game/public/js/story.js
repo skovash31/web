@@ -21,6 +21,8 @@ const PICKUP_KIND = {
   coffee: ["Someone's coffee. Still warm... I'm not asking.", 'More coffee. Bless whoever left this.'],
   flashlight: ['My flashlight.'],
   nothing: ['A big red button labelled "NOTHING". Of course I\'m taking it.', 'Another Nothing Button. Now I can do nothing twice.'],
+  gun: ['...A GUN?! The Nothing Button gave me a gun?!'],
+  gunammo: ['And bullets. Twelve of them.'],
 };
 const READ = {
   memo_pruitt: "'Nominees should not be informed'... nominated for what?",

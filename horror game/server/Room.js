@@ -3,15 +3,17 @@
 import { Floor } from './Floor.js';
 import { CEO } from './CEO.js';
 import { LEVELS, LEVEL_BY_ID } from '../shared/levels/index.js';
-import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY, STAPLER, COFFEE, MEDKIT } from '../shared/constants.js';
+import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY, STAPLER, COFFEE, MEDKIT, NOTHING, GUN } from '../shared/constants.js';
+const WEAPONS = { stapler: STAPLER, gun: GUN };
+const AMMO_NAME = { staples: 'staples', gunammo: 'bullets' };
 import { toTile, C, tileCenter } from '../shared/grid.js';
 import { saveCheckpoint } from './saves.js';
 
-const CARRY_KINDS = new Set(['battery', 'medkit', 'stapler', 'staples', 'coffee', 'nothing']);
+const CARRY_KINDS = new Set(['battery', 'medkit', 'stapler', 'staples', 'coffee', 'nothing', 'gun', 'gunammo']);
 const NOTHING_LINES = ['Nothing happens.', 'Nothing happened.', 'Still nothing.', 'It did nothing. As advertised.', 'Click. Nothing.', 'You feel exactly the same.'];
 // item fields that travel with carried items between floors
-const carryOf = (it) => ({ kind: it.kind, name: it.name, ...(it.ammo !== undefined ? { ammo: it.ammo } : {}), ...(it.count !== undefined ? { count: it.count } : {}) });
-const extrasOf = (c) => ({ ...(c.ammo !== undefined ? { ammo: c.ammo } : {}), ...(c.count !== undefined ? { count: c.count } : {}) });
+const carryOf = (it) => ({ kind: it.kind, name: it.name, ...(it.ammo !== undefined ? { ammo: it.ammo } : {}), ...(it.count !== undefined ? { count: it.count } : {}), ...(it.presses !== undefined ? { presses: it.presses } : {}) });
+const extrasOf = (c) => ({ ...(c.ammo !== undefined ? { ammo: c.ammo } : {}), ...(c.count !== undefined ? { count: c.count } : {}), ...(c.presses !== undefined ? { presses: c.presses } : {}) });
 const CLIENT_NOISES = { land: NOISE.land, flashlight: NOISE.flashlight, scream: NOISE.scream };
 
 export class Room {
@@ -318,9 +320,7 @@ export class Room {
       this.noiseSound(p.x, p.z, 'medkit');
       this.tell(p, 'You patch yourself up and catch your breath.');
     } else if (it.kind === 'nothing') {
-      // It does nothing. Only the presser hears the click; Mr. Thatch doesn't.
-      p.socket.emit('ev', { type: 'sound', name: 'nothing' });
-      return this.tell(p, NOTHING_LINES[Math.floor(Math.random() * NOTHING_LINES.length)]);
+      return this.pressNothing(p, it, idx);
     } else if (it.kind === 'coffee') {
       p.inventory.splice(idx, 1); it.state = 'used';
       p.boostUntil = Date.now() + COFFEE.duration * 1000;
@@ -336,21 +336,56 @@ export class Room {
     this.sendInventory(p);
   }
 
-  // ---------------------------------------------------------------- the stapler
-  stapleReserve(p) {
-    return p.inventory.map((iid) => this.floor.items.get(iid)).filter((it) => it && it.kind === 'staples').reduce((n, it) => n + (it.count || 0), 0);
+  // The Nothing Button. It (almost) always does nothing: only the presser hears the click
+  // and Mr. Thatch doesn't. 1 press in 100 gives you a pistol. After 5 presses it's gone.
+  pressNothing(p, it, idx) {
+    p.socket.emit('ev', { type: 'sound', name: 'nothing' });
+    it.presses = (it.presses ?? NOTHING.presses) - 1;
+    const roll = p.forceLuck ? 0 : p.noLuck ? 1 : this.rng();
+    p.forceLuck = false;
+    if (roll < NOTHING.gunChance) {
+      this.tell(p, 'Something happened.');
+      p.socket.emit('ev', { type: 'sound', name: 'jackpot' });
+      p.socket.emit('jackpot', {});
+      this.giveItem(p, 'gun', 'Pistol', { ammo: GUN.magazine });
+      this.giveItem(p, 'gunammo', 'Box of bullets', { count: GUN.perBox });
+    } else this.tell(p, NOTHING_LINES[Math.floor(Math.random() * NOTHING_LINES.length)]);
+    if (it.presses <= 0) {
+      p.inventory.splice(p.inventory.indexOf(it.id), 1); it.state = 'used';
+      setTimeout(() => this.tell(p, 'The Nothing Button crumbles into nothing.'), 700);
+    }
+    this.sendInventory(p);
   }
+
+  rng() { return Math.random(); }
+
+  // Put a new item in a player's hands (or at their feet if they're full).
+  giveItem(p, kind, name, extra = {}) {
+    const it = this.floor.createItem(kind, name, extra);
+    it.x = p.x; it.z = p.z; it.y = 0;
+    this.floor.syncItemEntity(it);
+    if (p.inventory.length < PLAYER.inventorySize) { it.state = 'held'; it.holder = p.id; p.inventory.push(it.id); }
+    else { it.state = 'world'; this.broadcastEvent({ type: 'item', item: this.floor.itemPublic(it) }); this.tell(p, `Your hands are full: the ${name.toLowerCase()} is at your feet.`); }
+    return it;
+  }
+
+  // ---------------------------------------------------------------- weapons (stapler, gun)
+  ammoReserve(p, kind = 'staples') {
+    return p.inventory.map((iid) => this.floor.items.get(iid)).filter((it) => it && it.kind === kind).reduce((n, it) => n + (it.count || 0), 0);
+  }
+  stapleReserve(p) { return this.ammoReserve(p, 'staples'); }
 
   // Fire a staple from the player's eye along `dir`. The server decides hits; the shooter's
   // own raycast only tells it *where on the model* the staple should stick.
   handleFire(p, d = {}) {
     if (!p.alive || p.hidden || !this.floor || this.phase !== 'playing' || this.transitioning || p.frozen) return;
     const st = this.floor.items.get(String(d.id || ''));
-    if (!st || st.kind !== 'stapler' || !p.inventory.includes(st.id)) return;
+    const W = st && WEAPONS[st.kind];
+    if (!W || !p.inventory.includes(st.id)) return;
     if (p.reload) return this.toPlayer(p, 'ammo', { msg: 'Still reloading...' });
     const now = Date.now();
-    if (now - (p.lastFire || 0) < STAPLER.fireInterval * 1000 - 30) return;
-    if (!(st.ammo > 0)) return this.toPlayer(p, 'ammo', { msg: this.stapleReserve(p) ? 'Empty. Press R to reload.' : 'Out of staples. Find a box of staples.', dry: true });
+    if (now - (p.lastFire || 0) < W.fireInterval * 1000 - 30) return;
+    if (!(st.ammo > 0)) return this.toPlayer(p, 'ammo', { msg: this.ammoReserve(p, W.ammoKind) ? 'Empty. Press R to reload.' : `Out of ${AMMO_NAME[W.ammoKind]}.`, dry: true });
     let dir = Array.isArray(d.dir) ? d.dir.map(Number) : null;
     if (!dir || dir.length !== 3 || dir.some((v) => !Number.isFinite(v))) return;
     const len = Math.hypot(...dir);
@@ -362,8 +397,8 @@ export class Room {
     const o = [p.x, eye, p.z];
     // how far the staple flies before hitting a wall, the floor or the ceiling
     const g = this.floor.grid, doorOpen = (id) => this.floor.isDoorOpen(id);
-    let wall = STAPLER.range;
-    for (let t = 0.2; t <= STAPLER.range; t += 0.1) {
+    let wall = W.range;
+    for (let t = 0.2; t <= W.range; t += 0.1) {
       const x = o[0] + dir[0] * t, y = o[1] + dir[1] * t, z = o[2] + dir[2] * t;
       const c = g.cell(toTile(x), toTile(z));
       if (y <= 0.02 || y >= (c === C.VENT ? 1.15 : 3) || g.tileOpaque(toTile(x), toTile(z), doorOpen) && !(c === C.VENT && y < 1.15)) { wall = t; break; }
@@ -384,26 +419,28 @@ export class Room {
       const ok = h && BONES.has(h.bone) && [h.local, h.normal].every((v) => Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(n) && Math.abs(n) < 3));
       stuck = ok ? { bone: h.bone, local: h.local.map((n) => +n.toFixed(3)), normal: h.normal.map((n) => +n.toFixed(3)), form: c.form } : { bone: hit.part, local: hit.part === 'Head' ? [0, 0.22, 0.2] : [0, 0.4, 0.12], normal: [0, 0, 1], form: c.form };
     }
-    const stunned = hit ? c.staple(p, stuck) : false;
-    this.broadcastEvent({ type: 'staple', by: p.id, from: o.map((n) => +n.toFixed(2)), to: to.map((n) => +n.toFixed(2)), hit: !!hit, stuck, stunned });
-    this.noise(p.x, p.z, STAPLER.noise, p, 'stapler');
+    if (stuck) stuck.weapon = st.kind;
+    const stunned = hit ? c.staple(p, stuck, W.stun) : false;
+    this.broadcastEvent({ type: 'staple', weapon: st.kind, by: p.id, from: o.map((n) => +n.toFixed(2)), to: to.map((n) => +n.toFixed(2)), hit: !!hit, stuck, stunned });
+    this.noise(p.x, p.z, W.noise, p, st.kind === 'gun' ? 'gunshot' : 'stapler');
     this.sendInventory(p);
   }
 
-  // Reload takes exactly STAPLER.reloadTime seconds and needs staples to load.
-  handleReload(p, staplerId = null) {
+  // Reloading takes exactly the weapon's reloadTime (stapler 5 s, gun 3 s) and needs ammo.
+  handleReload(p, weaponId = null) {
     if (!p.alive || !this.floor) return;
     if (p.reload) return;
-    const held = p.inventory.map((iid) => this.floor.items.get(iid)).filter((it) => it && it.kind === 'stapler');
-    const st = held.find((it) => it.id === staplerId) || held.find((it) => (it.ammo || 0) < STAPLER.magazine) || held[0];
-    if (!st) return this.toPlayer(p, 'ammo', { msg: "You don't have a stapler." });
-    if ((st.ammo || 0) >= STAPLER.magazine) return this.toPlayer(p, 'ammo', { msg: "It's already full." });
-    if (!this.stapleReserve(p)) return this.toPlayer(p, 'ammo', { msg: 'No staples to load. Find a box of staples.', dry: true });
+    const held = p.inventory.map((iid) => this.floor.items.get(iid)).filter((it) => it && WEAPONS[it.kind]);
+    const st = held.find((it) => it.id === weaponId) || held.find((it) => it.kind === 'stapler' && (it.ammo || 0) < STAPLER.magazine) || held.find((it) => it.kind === 'stapler') || held[0];
+    if (!st) return this.toPlayer(p, 'ammo', { msg: "You don't have anything to reload." });
+    const W = WEAPONS[st.kind];
+    if ((st.ammo || 0) >= W.magazine) return this.toPlayer(p, 'ammo', { msg: "It's already full." });
+    if (!this.ammoReserve(p, W.ammoKind)) return this.toPlayer(p, 'ammo', { msg: st.kind === 'gun' ? 'No bullets left.' : 'No staples to load. Find a box of staples.', dry: true });
     const token = { stapler: st.id, floor: this.floor };
     p.reload = token;
-    this.sendInventory(p, STAPLER.reloadTime);
-    this.noiseSound(p.x, p.z, 'staplerOpen');
-    this.floor.after(STAPLER.reloadTime, () => this.finishReload(p, token));
+    this.sendInventory(p, W.reloadTime);
+    this.noiseSound(p.x, p.z, st.kind === 'gun' ? 'gunReload' : 'staplerOpen');
+    this.floor.after(W.reloadTime, () => this.finishReload(p, token));
   }
 
   finishReload(p, token) {
@@ -411,16 +448,17 @@ export class Room {
     p.reload = null;
     const st = this.floor.items.get(token.stapler);
     if (!p.alive || !st || !p.inventory.includes(st.id) || this.floor !== token.floor) { this.sendInventory(p); return; }
-    let need = STAPLER.magazine - (st.ammo || 0);
+    const W = WEAPONS[st.kind];
+    let need = W.magazine - (st.ammo || 0);
     for (const iid of [...p.inventory]) {
       const box = this.floor.items.get(iid);
-      if (!box || box.kind !== 'staples' || need <= 0) continue;
+      if (!box || box.kind !== W.ammoKind || need <= 0) continue;
       const take = Math.min(need, box.count || 0);
       box.count -= take; need -= take;
       st.ammo = (st.ammo || 0) + take;
       if (box.count <= 0) { p.inventory.splice(p.inventory.indexOf(iid), 1); box.state = 'used'; }
     }
-    this.noiseSound(p.x, p.z, 'staplerLoad');
+    this.noiseSound(p.x, p.z, st.kind === 'gun' ? 'gunLoad' : 'staplerLoad');
     this.sendInventory(p);
   }
 
@@ -529,7 +567,7 @@ export class Room {
   sendInventory(p, reloading = 0) {
     if (!this.floor) return;
     p.socket.emit('inv', {
-      items: p.inventory.map((iid) => this.floor.items.get(iid)).filter(Boolean).map((it) => ({ id: it.id, kind: it.kind, name: it.name, key: it.key, ammo: it.ammo, count: it.count })),
+      items: p.inventory.map((iid) => this.floor.items.get(iid)).filter(Boolean).map((it) => ({ id: it.id, kind: it.kind, name: it.name, key: it.key, ammo: it.ammo, count: it.count, presses: it.presses })),
       health: p.health,
       reloading,
     });
@@ -559,9 +597,11 @@ export class Room {
     if (cmd.floor && LEVEL_BY_ID[cmd.floor]) { this.transitioning = false; this.changeFloor(cmd.floor); }
     if (cmd.flag && this.floor) this.floor.setFlag(cmd.flag);
     if (cmd.give && this.floor) { const it = this.floor.items.get(cmd.give); if (it) this.floor.pickup(p, it); }
-    const GIVE = { stapler: 'Heavy-duty stapler', staples: 'Box of staples', medkit: 'First-aid kit', coffee: 'Cup of coffee', battery: 'Battery', nothing: 'Nothing Button' };
+    const GIVE = { stapler: 'Heavy-duty stapler', staples: 'Box of staples', medkit: 'First-aid kit', coffee: 'Cup of coffee', battery: 'Battery', nothing: 'Nothing Button', gun: 'Pistol', gunammo: 'Box of bullets' };
+    if (cmd.luck === true) p.forceLuck = true; // next Nothing Button press gives the gun
+    if (cmd.luck === false) p.noLuck = true;  // (tests) presses never give the gun
     if (cmd.giveKind && this.floor && GIVE[cmd.giveKind]) {
-      const it = this.floor.createItem(cmd.giveKind, GIVE[cmd.giveKind], cmd.giveKind === 'stapler' ? { ammo: Number(cmd.ammo) || 0 } : cmd.giveKind === 'staples' ? { count: STAPLER.perBox } : {});
+      const it = this.floor.createItem(cmd.giveKind, GIVE[cmd.giveKind], cmd.giveKind === 'stapler' ? { ammo: Number(cmd.ammo) || 0 } : cmd.giveKind === 'staples' ? { count: STAPLER.perBox } : cmd.giveKind === 'gun' ? { ammo: cmd.ammo ?? GUN.magazine } : cmd.giveKind === 'gunammo' ? { count: GUN.perBox } : cmd.giveKind === 'nothing' ? { presses: NOTHING.presses } : {});
       it.state = 'world'; it.x = p.x; it.z = p.z; this.floor.syncItemEntity(it);
       this.floor.pickup(p, it);
     }

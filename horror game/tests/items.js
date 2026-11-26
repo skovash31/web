@@ -2,12 +2,27 @@
 import { Floor } from '../server/Floor.js';
 import { LEVELS } from '../shared/levels/index.js';
 import { C, toTile } from '../shared/grid.js';
-import { COFFEE, MEDKIT, PLAYER } from '../shared/constants.js';
+import { COFFEE, MEDKIT, PLAYER, NOTHING, GUN } from '../shared/constants.js';
 
 let passed = 0, failed = 0;
 const ok = (c, m) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.log('  ✗ ' + m); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fakeRoom = () => ({ players: new Map(), alivePlayers: () => [], broadcastEvent() {}, noise() {}, tell() {}, toPlayer() {} });
+
+function buttonTests() {
+  console.log('Nothing Button');
+  const counts = new Set();
+  let others = true;
+  for (let seed = 1; seed <= 40; seed++) {
+    for (const level of LEVELS) {
+      const f = new Floor(level, fakeRoom(), seed * 6007);
+      const n = [...f.items.values()].filter((i) => i.kind === 'nothing').length;
+      if (level.index === 0) counts.add(n); else if (n !== 1) others = false;
+    }
+  }
+  ok([...counts].every((n) => n >= 2 && n <= 4) && counts.size === 3, `the office spawns 2, 3 or 4 buttons (saw ${[...counts].sort().join(', ')})`);
+  ok(others, 'every other floor has exactly one');
+}
 
 function coffeeSpawnTests() {
   console.log('Coffee spawns');
@@ -79,14 +94,27 @@ export async function runOnlineItemTests() {
     ok(a.got.battery?.value === PLAYER.maxBattery && !find(a, 'battery'), 'loading a battery fills the flashlight');
     // the Nothing Button
     const btn = a.floor.state.items.filter((i) => i.kind === 'nothing');
-    ok(btn.length === 1 && b.floor.state.items.filter((i) => i.kind === 'nothing').length === 1, 'every floor has one Nothing Button, the same for both players');
+    ok(btn.length >= 2 && btn.length <= 4 && b.floor.state.items.filter((i) => i.kind === 'nothing').length === btn.length, `the office has 2-4 Nothing Buttons (${btn.length} this time), the same for both players`);
+    ok(btn.every((i) => i.presses === NOTHING.presses), `each one can be pressed ${NOTHING.presses} times`);
+    a.emit('debug', { luck: false });
     a.emit('debug', { giveKind: 'nothing' }); await waitFor(() => find(a, 'nothing'), 1000);
-    const before = JSON.stringify(a.inv.items), evA = a.events.length, evB = b.events.length;
+    const strip = (items) => JSON.stringify(items.map(({ presses, ...r }) => r));
+    const before = strip(a.inv.items), evA = a.events.length, evB = b.events.length;
     const gotBefore = JSON.stringify(a.got);
     a.emit('useItem', find(a, 'nothing').id); await sleep(400);
     const newA = a.events.slice(evA);
-    ok(JSON.stringify(a.inv.items) === before && JSON.stringify(a.got) === gotBefore, 'pressing the Nothing Button changes nothing: inventory, health, stamina, battery all the same');
+    ok(strip(a.inv.items) === before && JSON.stringify(a.got) === gotBefore && find(a, 'nothing').presses === NOTHING.presses - 1, 'pressing it does nothing (only one press used up): inventory, health, stamina, battery all the same');
     ok(newA.every((e) => (e.type === 'sound' && e.name === 'nothing') || (e.type === 'msg' && e.private)) && b.events.length === evB, 'it only clicks for the presser (no noise for Mr. Thatch, nothing for teammates)');
+    for (let i = 0; i < NOTHING.presses - 1; i++) { a.emit('useItem', find(a, 'nothing').id); await sleep(150); }
+    await sleep(200);
+    ok(!find(a, 'nothing') && !kinds(a).includes('gun'), `after ${NOTHING.presses} presses the button is gone`);
+    // the 1% roll: forced win
+    a.emit('debug', { giveKind: 'nothing' }); await waitFor(() => find(a, 'nothing'), 1000);
+    a.emit('debug', { luck: true });
+    a.emit('useItem', find(a, 'nothing').id);
+    ok(await waitFor(() => find(a, 'gun') && find(a, 'gunammo'), 1000), 'a lucky press gives a pistol and a box of bullets');
+    ok(find(a, 'gun')?.ammo === GUN.magazine && find(a, 'gunammo')?.count === GUN.perBox && find(a, 'nothing')?.presses === NOTHING.presses - 1, `the pistol comes loaded (${GUN.magazine}) with ${GUN.perBox} spare, and the button keeps its other presses`);
+    for (const k of ['gun', 'gunammo', 'nothing']) { a.emit('dropItem', find(a, k).id); await sleep(80); }
     // other items drop normally
     a.emit('debug', { giveKind: 'coffee' }); await waitFor(() => find(a, 'coffee'), 1000);
     const c2 = find(a, 'coffee');
@@ -114,6 +142,7 @@ export async function runOnlineItemTests() {
 }
 
 export function runItemTests() {
+  buttonTests();
   coffeeSpawnTests();
   return { passed, failed };
 }

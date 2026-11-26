@@ -8,7 +8,8 @@ const store = {};
 
 export async function loadModels(onProgress) {
   const list = [['player', 'models/player.glb'], ['monster', 'models/monster.glb'], ['flashlight', 'models/flashlight.glb'], ['boss', 'models/boss.glb'], ['car', 'models/car.glb'], ['stapler', 'models/stapler.glb'], ['staple', 'models/staple.glb'], ['staples', 'models/staple_ammo.glb'],
-    ['battery', 'models/battery.glb'], ['coffee', 'models/coffee.glb'], ['folder', 'models/folder.glb'], ['fuse', 'models/fuse.glb'], ['medkit', 'models/medkit.glb']];
+    ['battery', 'models/battery.glb'], ['coffee', 'models/coffee.glb'], ['folder', 'models/folder.glb'], ['fuse', 'models/fuse.glb'], ['medkit', 'models/medkit.glb'],
+    ['gun', 'models/gun.glb'], ['bullet', 'models/bullet.glb'], ['gunammo', 'models/gun_ammo.glb']];
   let done = 0;
   await Promise.all(list.map(([k, url]) => new Promise((res) => {
     loader.load(url, (g) => { store[k] = g.scene; done++; onProgress?.(done / list.length); res(); }, undefined, (e) => { console.warn('model failed', url, e); store[k] = null; done++; res(); });
@@ -74,7 +75,7 @@ export function makeStaple() {
   return root;
 }
 // Item kinds that have their own model in "3d models/" (folders and the report share one).
-const ITEM_MODEL = { battery: 'battery', coffee: 'coffee', file: 'folder', report: 'folder', fuse: 'fuse', medkit: 'medkit', staples: 'staples' };
+const ITEM_MODEL = { battery: 'battery', coffee: 'coffee', file: 'folder', report: 'folder', fuse: 'fuse', medkit: 'medkit', staples: 'staples', gun: 'gun', gunammo: 'gunammo' };
 export function makeItemModel(kind) {
   const src = store[ITEM_MODEL[kind]];
   if (!src) return null;
@@ -82,6 +83,20 @@ export function makeItemModel(kind) {
   if (kind === 'report') root.traverse((o) => { if (o.isMesh && o.material.name === 'Manila') { o.material = o.material.clone(); o.material.color.set(0xf4f1e8); } }); // printed report: white cover
   if (kind === 'fuse') root.traverse((o) => { if (o.isMesh && o.material.name === 'Filament') { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0xff9a30); o.material.emissiveIntensity = 0.8; } });
   return root;
+}
+
+// gun.glb: fires along -Z; Slide kicks back, Magazine drops out on reload.
+export function makeGun() {
+  const src = store.gun;
+  if (!src) return null;
+  const root = prepare(src.clone(true), { shadow: false });
+  const slide = find(root, 'Slide'), mag = find(root, 'Magazine');
+  return { root, slide, mag, slideZ: slide?.position.z ?? 0, magY: mag?.position.y ?? 0 };
+}
+// bullet.glb: tip toward -Z.
+export function makeBullet() {
+  const src = store.bullet;
+  return src ? prepare(src.clone(true), { shadow: false }) : null;
 }
 
 export function makeStaplesBox() {

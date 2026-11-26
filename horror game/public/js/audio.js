@@ -401,6 +401,10 @@ export class Audio {
       case 'medkit': this.noise({ type: 'bandpass', freq: 1800, q: 2, dur: 0.25, gain: 0.25, at: A, verb: 0.2 }); this.noise({ type: 'highpass', freq: 3000, dur: 0.6, gain: 0.08, at: A, delay: 0.25, attack: 0.1 }); break;
       case 'slurp': for (let i = 0; i < 3; i++) this.noise({ type: 'bandpass', freq: 600 + i * 120, freqEnd: 1100, q: 3, dur: 0.22, gain: 0.25, at: A, verb: 0.1, delay: i * 0.28, attack: 0.04 }); this.tone({ type: 'sine', freq: 300, freqEnd: 180, dur: 0.15, gain: 0.08, at: A, delay: 0.95 }); break;
       case 'nothing': this.noise({ type: 'bandpass', freq: 2400, q: 6, dur: 0.035, gain: 0.35, verb: 0.05 }); this.noise({ type: 'bandpass', freq: 1500, q: 6, dur: 0.03, gain: 0.25, verb: 0.05, delay: 0.09 }); break;
+      case 'gunshot': this.noise({ type: 'lowpass', freq: 2600, freqEnd: 400, dur: 0.35, gain: 1.6, at: A, verb: 1.0 }); this.noise({ type: 'highpass', freq: 3000, dur: 0.06, gain: 0.9, at: A, verb: 0.6 }); this.tone({ type: 'sawtooth', freq: 90, freqEnd: 30, dur: 0.25, gain: 0.6, at: A, verb: 0.5 }); break;
+      case 'gunReload': this.noise({ type: 'bandpass', freq: 1300, q: 3, dur: 0.08, gain: 0.5, at: A, verb: 0.3 }); this.noise({ type: 'lowpass', freq: 600, dur: 0.1, gain: 0.4, at: A, verb: 0.3, delay: 0.45 }); break;
+      case 'gunLoad': this.noise({ type: 'bandpass', freq: 2200, q: 3, dur: 0.06, gain: 0.6, at: A, verb: 0.3 }); this.noise({ type: 'bandpass', freq: 1600, q: 3, dur: 0.08, gain: 0.6, at: A, verb: 0.3, delay: 0.18 }); break;
+      case 'jackpot': [523, 659, 784, 1046].forEach((f, i) => this.tone({ type: 'triangle', freq: f, dur: 0.35, gain: 0.12, delay: i * 0.12, verb: 0.5 })); break;
       case 'thud': this.noise({ type: 'lowpass', freq: 250, dur: 0.35, gain: 1.2, at: A, verb: 0.8 }); this.tone({ freq: 55, freqEnd: 30, dur: 0.3, gain: 0.6, at: A }); break;
       default: break;
     }

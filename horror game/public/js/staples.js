@@ -3,7 +3,7 @@
 // on every client), stays there for the whole stun and drops off when it ends. Misses
 // stick in the wall for a while.
 import * as THREE from 'three';
-import { makeStaple } from './models.js';
+import { makeStaple, makeBullet } from './models.js';
 
 const SPEED = 45;          // m/s, fast but visible
 const SCALE = 3.2;         // the staple model is ~2.6 cm: make it readable at a distance
@@ -20,7 +20,14 @@ export class StapleFX {
     this.falling = [];
   }
 
-  mesh() {
+  mesh(weapon) {
+    if (weapon === 'gun') {
+      const b = makeBullet();
+      const g = new THREE.Group();
+      if (b) { b.rotation.y = Math.PI; g.add(b); } // tip leads (+Z after the flight alignment)
+      g.scale.setScalar(2.2);
+      return g;
+    }
     const m = makeStaple();
     const g = new THREE.Group();
     if (m) g.add(m);
@@ -36,12 +43,12 @@ export class StapleFX {
     const len = dir.length();
     if (len < 0.01) return;
     dir.normalize();
-    const g = this.mesh();
+    const g = this.mesh(e.weapon);
     // fly crown-first, legs trailing (legs point to -Z in the model)
     g.quaternion.setFromUnitVectors(_z, dir);
     g.position.copy(from).addScaledVector(dir, 0.35);
     this.scene.add(g);
-    this.flying.push({ g, from, to, dir, t: 0, dur: len / SPEED, e });
+    this.flying.push({ g, from, to, dir, t: 0, dur: len / (e.weapon === 'gun' ? 140 : SPEED), e });
   }
 
   land(f) {
@@ -68,14 +75,15 @@ export class StapleFX {
     const rig = this.rigFor(s.form) || this.remotes.ceoRig;
     const bone = rig && (rig[s.bone] || rig.Torso);
     if (!bone) return;
-    const g = this.mesh();
+    const g = this.mesh(s.weapon);
     const n = new THREE.Vector3(...s.normal);
     if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
     n.normalize();
     // the model is scaled: undo the bone's world scale so staples keep their size
     bone.updateWorldMatrix(true, false);
     const ws = new THREE.Vector3(); bone.getWorldScale(ws);
-    g.scale.set(STUCK / ws.x, STUCK / ws.y, STUCK / ws.z);
+    const sc = s.weapon === 'gun' ? 2.2 : STUCK;
+    g.scale.set(sc / ws.x, sc / ws.y, sc / ws.z);
     g.quaternion.setFromUnitVectors(_z, n); // crown faces out, legs (-Z) driven into him
     g.position.set(...s.local).addScaledVector(n, 0.004);
     bone.add(g);

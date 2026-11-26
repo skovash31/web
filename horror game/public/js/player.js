@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { PLAYER, WALL_H, VENT_CEIL, COFFEE } from '../shared/constants.js';
 import { C, toTile } from '../shared/grid.js';
-import { makeFlashlight, makeStapler } from './models.js';
+import { makeFlashlight, makeStapler, makeGun } from './models.js';
 import { buildItem } from './props.js';
 
 const P = PLAYER;
@@ -224,7 +224,7 @@ export class LocalPlayer {
     const h = this.hands[which];
     const id = item?.id || null;
     if (h.itemId === id && h.built) return;
-    h.itemId = id; h.kind = item?.kind || null; h.top = null; h.setOn = null; h.kick = 0;
+    h.itemId = id; h.kind = item?.kind || null; h.top = null; h.setOn = null; h.kick = 0; h.gun = null;
     if (h.model) h.g.remove(h.model);
     h.model = null;
     h.built = true;
@@ -234,6 +234,8 @@ export class LocalPlayer {
       m = makeFlashlight(); m.scale.setScalar(0.85); h.setOn = m.userData.setOn;
     } else if (item.kind === 'stapler' && (m = makeStapler())) {
       h.top = m.top; m = m.root; m.scale.setScalar(1.25);
+    } else if (item.kind === 'gun' && (m = makeGun())) {
+      h.gun = m; m = m.root; m.scale.setScalar(1.1); m.position.y = 0.02;
     } else {
       // any other item: its world model, sized to sit in the palm
       m = buildItem(item.kind, item.key);
@@ -280,6 +282,11 @@ export class LocalPlayer {
           rx = open * 0.55; rz = open * 0.5 * h.side; ry = (0.06 - open * 0.3) * h.side;
           top = open * 1.0 + wobble;
           h.g.position.y += open * 0.06 + (r > 0.3 && r < 0.7 ? Math.sin(r * 20) * 0.01 : 0);
+        } else if (h.kind === 'gun') {
+          // tilt it, drop the magazine, slap a fresh one in, rack the slide
+          rx = open * 0.35; rz = open * 0.6 * h.side; ry = (0.06 - open * 0.2) * h.side;
+          if (h.gun?.mag) h.gun.mag.position.y = h.gun.magY - (r > 0.15 && r < 0.6 ? Math.min(1, (r - 0.15) / 0.15) * 0.12 : 0);
+          if (h.gun?.slide) h.gun.slide.position.z = h.gun.slideZ + (r > 0.75 && r < 0.9 ? 0.025 : 0);
         } else if (h.kind === 'flashlight') {
           // point it up, unscrew the cap, drop a fresh battery in
           rx = open * 1.1; rz = open * Math.sin(r * 30) * 0.3;
@@ -291,6 +298,12 @@ export class LocalPlayer {
         const u = Math.sin(Math.min(1, (1 - h.use) / 0.7) * Math.PI);
         h.g.position.x -= h.base.x * 0.7 * u; h.g.position.y += 0.12 * u; h.g.position.z += 0.12 * u;
         rx -= 0.9 * u;
+      }
+      if (h.kind === 'gun' && r < 0) {
+        // recoil: muzzle flips up, the slide snaps back
+        rx = (this.sprinting ? 0.25 : 0) + 0.04 + h.kick * 0.5;
+        if (h.gun?.slide) h.gun.slide.position.z = h.gun.slideZ + h.kick * 0.03;
+        if (h.gun?.mag) h.gun.mag.position.y = h.gun.magY;
       }
       h.g.rotation.set(rx, ry, rz);
       if (h.top) h.top.rotation.x = top;

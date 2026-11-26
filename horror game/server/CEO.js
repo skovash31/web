@@ -108,7 +108,7 @@ export class CEO {
 
   snapshot() {
     return { x: +this.x.toFixed(2), z: +this.z.toFixed(2), yaw: +this.yaw.toFixed(3), st: this.state, an: this.anim, sp: +this.speed.toFixed(2), fm: this.form,
-      bl: +this.blindTimer.toFixed(1), cd: +this.blindCooldown.toFixed(1), sn: +this.stunTimer.toFixed(1) };
+      bl: +this.blindTimer.toFixed(1), cd: +this.blindCooldown.toFixed(1), sn: +this.stunTimer.toFixed(1), sm: this.stunMax || STAPLER.stun };
   }
 
   // Cutscene control: walk (never teleport) to a point at a given speed, ignoring players.
@@ -495,17 +495,24 @@ export class CEO {
 
   // A staple hit: stun for exactly STAPLER.stun seconds. Hits while already stunned stick
   // (so you can see them) but never extend or restart the stun.
-  staple(by, stuck) {
+  // `dur`: 10 s for a staple, 30 s for a bullet. A longer stun can replace a shorter one
+  // that's running (a bullet during a staple stun), but nothing ever adds up.
+  staple(by, stuck, dur = STAPLER.stun) {
     if (!this.canBeStapled()) return false;
     if (stuck) this.staples.push(stuck);
-    if (this.stunTimer > 0) return false;
-    this.stunTimer = STAPLER.stun;
+    if (this.stunTimer > 0) {
+      if (dur <= (this.stunMax || STAPLER.stun)) return false; // same or weaker kind: never extends
+      this.stunTimer = dur; this.stunMax = dur;
+      this.room.broadcastEvent({ type: 'ceo', what: 'stun', by: by?.id, dur, form: this.form, upgrade: true });
+      return true;
+    }
+    this.stunTimer = dur; this.stunMax = dur;
     this.blindTimer = 0;
     this.aimTime.clear();
     if (this.action) this.action = null;
     this.wasChasing = this.state === 'chase';
     this.speed = 0; this.anim = 'stunned'; this.path = null;
-    this.room.broadcastEvent({ type: 'ceo', what: 'stun', by: by?.id, dur: STAPLER.stun, form: this.form });
+    this.room.broadcastEvent({ type: 'ceo', what: 'stun', by: by?.id, dur, form: this.form });
     this.room.noiseSound(this.x, this.z, this.form === 'monster' ? 'screech' : 'gasp');
     return true;
   }

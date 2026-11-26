@@ -1,7 +1,7 @@
 // Runtime state and rules for a single floor: doors, items, puzzles, hazards, triggers.
 // Everything here is authoritative; clients only send intents ("interact with X").
 import { Grid, C, toTile, tileCenter, mulberry32 } from '../shared/grid.js';
-import { PLAYER, NOISE, STAPLER } from '../shared/constants.js';
+import { PLAYER, NOISE, STAPLER, NOTHING } from '../shared/constants.js';
 
 export class Floor {
   constructor(level, room, seed) {
@@ -188,8 +188,9 @@ export class Floor {
     place('stapler', 'Heavy-duty stapler', { ammo: 0 });
     const boxes = this.level.index === 0 ? 1 : 2;
     for (let i = 0; i < boxes; i++) place('staples', 'Box of staples', { count: STAPLER.perBox });
-    // the Nothing Button: it does nothing
-    place('nothing', 'Nothing Button', {});
+    // the Nothing Button: it does nothing (almost). 2-4 in the office, 1 on every other floor
+    const buttons = this.level.index === 0 ? 2 + Math.floor(this.rng() * 3) : 1;
+    for (let i = 0; i < buttons; i++) place('nothing', 'Nothing Button', { presses: NOTHING.presses });
     // coffee is left on desks (any low furniture if a floor has no free desk)
     const cups = this.level.index === 0 ? 2 : 1;
     for (let i = 0; i < cups; i++) {
@@ -247,7 +248,7 @@ export class Floor {
   }
 
   itemPublic(it) {
-    return { id: it.id, kind: it.kind, name: it.name, key: it.key, state: it.state, holder: it.holder, x: +it.x.toFixed(2), y: it.y, z: +it.z.toFixed(2), ammo: it.ammo, count: it.count };
+    return { id: it.id, kind: it.kind, name: it.name, key: it.key, state: it.state, holder: it.holder, x: +it.x.toFixed(2), y: it.y, z: +it.z.toFixed(2), ammo: it.ammo, count: it.count, presses: it.presses };
   }
 
   // ---------------------------------------------------------------- doors & flags

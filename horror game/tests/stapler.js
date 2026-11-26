@@ -4,7 +4,7 @@ import { Floor } from '../server/Floor.js';
 import { CEO } from '../server/CEO.js';
 import { LEVELS, LEVEL_BY_ID } from '../shared/levels/index.js';
 import { C, toTile, tileCenter } from '../shared/grid.js';
-import { STAPLER } from '../shared/constants.js';
+import { STAPLER, GUN } from '../shared/constants.js';
 
 let passed = 0, failed = 0;
 const ok = (c, m) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.log('  ✗ ' + m); } };
@@ -99,6 +99,19 @@ function stunTests() {
   w4.ceo.blindTimer = 3;
   w4.ceo.staple(null, null);
   ok(w4.ceo.stunned && !w4.ceo.blinded, 'a staple hit replaces an active blind (no double effects)');
+}
+
+function gunStunTests() {
+  console.log('Gun stun');
+  const w = world('b3');
+  ok(w.ceo.staple(null, null, GUN.stun) === true && w.ceo.stunTimer === GUN.stun, `a bullet stuns him for ${GUN.stun} s`);
+  const t = sim(w, GUN.stun + 1, () => !w.ceo.stunned);
+  ok(t !== null && Math.abs(t - GUN.stun) < 0.11, `lasts exactly ${GUN.stun} s (${t?.toFixed(2)} s)`);
+  const w2 = world('b3');
+  w2.ceo.staple(null, null, STAPLER.stun); sim(w2, 4);
+  ok(w2.ceo.staple(null, null, GUN.stun) === true && w2.ceo.stunTimer === GUN.stun, 'a bullet during a staple stun upgrades it to the full 30 s (not 30 + what was left)');
+  ok(w2.ceo.staple(null, null, STAPLER.stun) === false && w2.ceo.stunTimer === GUN.stun, 'a staple during a gun stun changes nothing');
+  ok(w2.ceo.snapshot().sm === GUN.stun, 'clients are told the stun length for the HUD bar');
 }
 
 function hitTests() {
@@ -209,6 +222,29 @@ export async function runOnlineStaplerTests() {
     await sleep(2000);
     ok(Math.hypot(b.snaps.at(-1).c.x - pos[0], b.snaps.at(-1).c.z - pos[1]) < 0.01, 'he does not move while stunned');
     ok(await waitFor(() => b.events.some((e) => e.type === 'ceo' && e.what === 'unstun'), 9000), 'the stun ends for everyone');
+    // the pistol
+    a.emit('debug', { giveKind: 'gun' }); a.emit('debug', { giveKind: 'gunammo' });
+    const gun = () => a.inv?.items.find((i) => i.kind === 'gun');
+    await waitFor(() => gun() && a.inv.items.some((i) => i.kind === 'gunammo'), 1500);
+    const evBefore = a.events.length;
+    let gt = 0;
+    while (!a.events.slice(evBefore).some((e) => e.type === 'staple' && e.weapon === 'gun' && e.hit) && gt++ < 6) {
+      const c = a.snaps.at(-1).c;
+      a.emit('debug', { tp: { x: c.x + Math.sin(c.yaw) * 4, z: c.z + Math.cos(c.yaw) * 4 } }); await sleep(150);
+      const c2 = a.snaps.at(-1).c, me = a.snaps.at(-1).p.find((q) => q.id === a.id);
+      const d = [c2.x - me.x, -0.4, c2.z - me.z]; const l = Math.hypot(...d);
+      a.emit('fire', { id: gun().id, dir: d.map((v) => v / l) }); await sleep(700);
+    }
+    const gshot = a.events.slice(evBefore).find((e) => e.type === 'staple' && e.weapon === 'gun' && e.hit);
+    ok(!!gshot && gshot.stunned && gshot.stuck?.weapon === 'gun', 'a pistol shot hits, stuns, and the bullet stays in him');
+    await sleep(300);
+    ok(b.snaps.at(-1).c.sn > GUN.stun - 2 && b.snaps.at(-1).c.sm === GUN.stun, `everyone sees the ${GUN.stun} s stun (${b.snaps.at(-1).c.sn} s left)`);
+    ok(gun().ammo === GUN.magazine - gt, `each shot uses a bullet (${gun().ammo} left)`);
+    const r0 = Date.now();
+    a.emit('reload', gun().id);
+    await waitFor(() => gun()?.ammo === GUN.magazine, 5000);
+    const rt = Date.now() - r0;
+    ok(gun().ammo === GUN.magazine && Math.abs(rt - GUN.reloadTime * 1000) < 400, `the pistol reloads from the box in ${(rt / 1000).toFixed(2)} s`);
     const shotT = a.events.indexOf(shot);
     void shotT;
   } catch (e) {
@@ -223,6 +259,7 @@ export async function runOnlineStaplerTests() {
 export function runStaplerTests() {
   spawnTests();
   stunTests();
+  gunStunTests();
   hitTests();
   return { passed, failed };
 }

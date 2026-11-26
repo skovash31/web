@@ -4,7 +4,9 @@ import * as THREE from 'three';
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { LEVEL_BY_ID, LEVELS } from '../shared/levels/index.js';
 import { C, toTile } from '../shared/grid.js';
-import { PLAYER, SEND_RATE, DIFFICULTIES, STAPLER, COFFEE } from '../shared/constants.js';
+import { PLAYER, SEND_RATE, DIFFICULTIES, STAPLER, COFFEE, GUN } from '../shared/constants.js';
+const WEAPON = { stapler: STAPLER, gun: GUN };
+const WEAPON_NAME = { stapler: 'STAPLER', gun: 'PISTOL' };
 import { World } from './world.js';
 import { LocalPlayer } from './player.js';
 import { Remotes } from './remotes.js';
@@ -228,28 +230,32 @@ net.on('inv', (d) => {
   G.invIds = d.items.map((i) => i.id);
   G.items = d.items;
   // staplers: staples loaded in each one; spare staples in boxes
-  G.staplers = new Map(d.items.filter((i) => i.kind === 'stapler').map((i) => [i.id, i.ammo || 0]));
-  G.staplesReserve = d.items.filter((i) => i.kind === 'staples').reduce((n, i) => n + (i.count || 0), 0);
-  if (d.reloading > 0) { G.reloadStart = performance.now(); G.reloadEnd = G.reloadStart + d.reloading * 1000; audio.play('staplerOpen'); }
+  // weapons (stapler, gun): rounds loaded in each one; spare ammo by ammo kind
+  G.weapons = new Map(d.items.filter((i) => WEAPON[i.kind]).map((i) => [i.id, { kind: i.kind, ammo: i.ammo || 0 }]));
+  G.reserve = {};
+  for (const i of d.items) if (i.kind === 'staples' || i.kind === 'gunammo') G.reserve[i.kind] = (G.reserve[i.kind] || 0) + (i.count || 0);
+  if (d.reloading > 0) { G.reloadStart = performance.now(); G.reloadEnd = G.reloadStart + d.reloading * 1000; audio.play(d.items.find((i) => i.id === G.reloadStaplerId)?.kind === 'gun' ? 'gunReload' : 'staplerOpen'); }
   else if (G.reloadEnd) {
     G.reloadEnd = 0;
-    const st = d.items.find((i) => i.id === G.reloadStaplerId) || d.items.find((i) => i.kind === 'stapler');
-    if (st) { audio.play('staplerLoad'); story.say('you', st.ammo >= STAPLER.magazine ? 'Loaded. Twenty staples.' : 'Loaded what I had.', { key: 'reloaded', cooldown: 30 }); }
+    const st = d.items.find((i) => i.id === G.reloadStaplerId) || d.items.find((i) => WEAPON[i.kind]);
+    if (st?.kind === 'gun') audio.play('gunLoad');
+    else if (st) { audio.play('staplerLoad'); story.say('you', st.ammo >= STAPLER.magazine ? 'Loaded. Twenty staples.' : 'Loaded what I had.', { key: 'reloaded', cooldown: 30 }); }
   }
   refreshInventory();
   if (G.invReady) {
     for (const it of d.items) {
       if (prev.has(it.id)) continue;
       story.pickup(it);
-      // a new stapler goes straight into your hand, ready to use
-      if (it.kind === 'stapler') { const k = ui.items.findIndex((i) => i.id === it.id); if (k >= 0) ui.select(k); }
+      // a new stapler / gun goes straight into your hand, ready to use
+      if (it.kind === 'stapler' || it.kind === 'gun') { const k = ui.items.findIndex((i) => i.id === it.id); if (k >= 0) ui.select(k); }
     }
   }
   G.invReady = true;
 });
+net.on('jackpot', () => { me.shake = Math.max(me.shake, 0.4); setTimeout(() => story.say('you', "Wait. It did something. It did SOMETHING!", { priority: true }), 400); });
 net.on('ammo', (a) => {
   if (a.msg) ui.message(a.msg, 2.5, true);
-  if (a.dry) { audio.play('dry'); if (G.staplers?.size && !G.staplesReserve) story.say('you', 'Empty. I need more staples.', { key: 'nostaples', cooldown: 25 }); }
+  if (a.dry) { audio.play('dry'); if (G.weapons?.size && !G.reserve?.staples) story.say('you', 'Empty. I need more staples.', { key: 'nostaples', cooldown: 25 }); }
 });
 net.on('note', (n) => { ui.openNote(n); audio.play('ui'); story.read(n.id); });
 net.on('keypad', (k) => { input.unlock(); ui.openKeypad(k.digits, (code) => net.emit('interact', { id: k.id, code })); });
@@ -372,8 +378,8 @@ function handleEvent(e) {
     case 'trap': world.setTrapSealed(); me.shake = 2; break;
     case 'staple': {
       stapleFX.shot(e);
-      if (e.by !== G.myId) audio.play('staple', [e.from[0], e.from[2]]);
-      if (e.by === G.myId && e.hit) story.say('you', e.stunned ? pick(['Got him!', 'Right in him — MOVE!', "He's down! Go, go!"]) : 'Another one in him.', { priority: true, key: 'staplehit', cooldown: e.stunned ? 0 : 6 });
+      if (e.by !== G.myId) audio.play(e.weapon === 'gun' ? 'gunshot' : 'staple', [e.from[0], e.from[2]]);
+      if (e.by === G.myId && e.hit) story.say('you', e.weapon === 'gun' ? (e.stunned ? "He's DOWN. That'll hold him for a while!" : 'Hit him!') : e.stunned ? pick(['Got him!', 'Right in him — MOVE!', "He's down! Go, go!"]) : 'Another one in him.', { priority: true, key: 'staplehit', cooldown: e.stunned ? 0 : 6 });
       break;
     }
     case 'left': G.alive.delete(e.id); break;
@@ -585,7 +591,7 @@ function updateStun(dt) {
   const c = remotes.ceoState;
   const playing = G.phase === 'playing' && me.alive && c && remotes.ceoActive && !cutscenes.active;
   let mode = null, label = '', fill = 0;
-  if (playing && c.sn > 0) { mode = 'stunned'; label = `THATCH IS STUNNED · ${Math.ceil(c.sn)}s`; fill = c.sn / STAPLER.stun; }
+  if (playing && c.sn > 0) { mode = 'stunned'; label = `THATCH IS STUNNED · ${Math.ceil(c.sn)}s`; fill = c.sn / (c.sm || STAPLER.stun); }
   else if (playing && c.bl > 0) { mode = 'blind'; label = 'THATCH IS BLINDED'; fill = c.bl / STUN.duration; }
   else if (playing && c.cd > 0) { mode = 'cool'; label = `Flashlight stun recharging · ${Math.ceil(c.cd)}s`; fill = 1 - c.cd / STUN.cooldown; }
   else if (playing) {
@@ -670,7 +676,8 @@ function useHeld(which) {
   if (!it || me.hidden && it.kind !== 'flashlight') return;
   switch (it.kind) {
     case 'flashlight': toggleFlashlight(); break;
-    case 'stapler': fireStapler(it.id, which); break;
+    case 'stapler': case 'gun': fireStapler(it.id, which); break;
+    case 'gunammo': tryReload([...(G.weapons || new Map())].find(([, w]) => w.kind === 'gun')?.[0]); break;
     case 'battery': reloadFlashlight(); break;
     case 'staples': tryReload(); break;
     case 'medkit':
@@ -688,7 +695,7 @@ function useHeld(which) {
 function reloadHeld() {
   for (const which of ['main', 'off']) {
     const it = handItem(which);
-    if (it?.kind === 'stapler') return tryReload(it.id);
+    if (WEAPON[it?.kind]) return tryReload(it.id);
     if (it?.kind === 'flashlight') return reloadFlashlight();
   }
   ui.message('Hold the stapler or the flashlight to reload it.', 2, true);
@@ -722,10 +729,11 @@ function dropHeld() {
 }
 
 function tryReload(id) {
-  const st = id || [...(G.staplers || new Map()).keys()][0];
+  const st = id || [...(G.weapons || new Map())].find(([, w]) => w.kind === 'stapler')?.[0] || [...(G.weapons || new Map()).keys()][0];
   if (!st || G.reloadEnd) return;
-  if ((G.staplers.get(st) || 0) >= STAPLER.magazine) return ui.message("It's already full.", 2, true);
-  if (!G.staplesReserve) { audio.play('dry'); return ui.message('No staples to load. Find a box of staples.', 2.5, true); }
+  const w = G.weapons.get(st), W = WEAPON[w.kind];
+  if (w.ammo >= W.magazine) return ui.message("It's already full.", 2, true);
+  if (!G.reserve[W.ammoKind]) { audio.play('dry'); return ui.message(w.kind === 'gun' ? 'No bullets left.' : 'No staples to load. Find a box of staples.', 2.5, true); }
   G.reloadStaplerId = st;
   net.emit('reload', st);
 }
@@ -733,14 +741,15 @@ function tryReload(id) {
 // The server decides hits. Our own raycast against his model only says which bone the
 // staple should stick to (and where), so it lands on the same spot for everyone.
 function fireStapler(id, which) {
-  const loaded = G.staplers?.get(id);
-  if (loaded === undefined) return;
+  const w = G.weapons?.get(id);
+  if (!w) return;
+  const W = WEAPON[w.kind], loaded = w.ammo;
   if (G.reloadEnd) return ui.message('Reloading...', 1.2, true);
   const now = performance.now();
-  if (now - (G.lastFire || 0) < STAPLER.fireInterval * 1000) return;
+  if (now - (G.lastFire || 0) < W.fireInterval * 1000) return;
   if (loaded <= 0) {
     audio.play('dry');
-    ui.message(G.staplesReserve ? 'Empty — press R to reload.' : 'Out of staples. Find a box of staples.', 2, true);
+    ui.message(G.reserve[W.ammoKind] ? 'Empty — press R to reload.' : w.kind === 'gun' ? 'Out of bullets.' : 'Out of staples. Find a box of staples.', 2, true);
     return;
   }
   G.lastFire = now;
@@ -749,7 +758,7 @@ function fireStapler(id, which) {
   const rig = remotes.ceoRig;
   if (rig?.model && remotes.ceoActive) {
     raycaster.set(camera.getWorldPosition(new THREE.Vector3()), dir);
-    raycaster.far = STAPLER.range;
+    raycaster.far = W.range;
     const hits = raycaster.intersectObject(rig.model, true);
     for (const h of hits) {
       let o = h.object;
@@ -763,8 +772,9 @@ function fireStapler(id, which) {
     }
   }
   net.emit('fire', { id, dir: dir.toArray().map((v) => +v.toFixed(4)), hit });
-  G.staplers.set(id, loaded - 1); // the server's inventory update follows right away
-  audio.play('staple');
+  w.ammo = loaded - 1; // the server's inventory update follows right away
+  audio.play(w.kind === 'gun' ? 'gunshot' : 'staple');
+  if (w.kind === 'gun') me.shake = Math.max(me.shake, 0.35);
   me.kickHand(which);
   me.shake = Math.max(me.shake, 0.08);
 }
@@ -772,10 +782,12 @@ function fireStapler(id, which) {
 function updateAmmoHud() {
   const el = $('ammo');
   const m = mainItem(), o = offItem();
-  // show the stapler you're holding (main hand first), else the first one you carry
-  const which = m?.kind === 'stapler' ? 'main' : o?.kind === 'stapler' ? 'off' : null;
-  const sid = which ? handItem(which).id : [...(G.staplers || new Map()).keys()][0];
-  const loaded = sid ? G.staplers.get(sid) : 0;
+  // show the weapon you're holding (main hand first), else the first one you carry
+  const which = WEAPON[m?.kind] ? 'main' : WEAPON[o?.kind] ? 'off' : null;
+  const sid = which ? handItem(which).id : [...(G.weapons || new Map()).keys()][0];
+  const wpn = sid ? G.weapons.get(sid) : null;
+  const loaded = wpn ? wpn.ammo : 0;
+  const reserve = wpn ? G.reserve[WEAPON[wpn.kind].ammoKind] || 0 : 0;
   const show = !!sid && G.phase === 'playing' && me.alive;
   el.classList.toggle('hidden', !show);
   const now = performance.now();
@@ -799,16 +811,17 @@ function updateAmmoHud() {
     ui.message((G.items || []).some((i) => i.kind === 'battery') ? 'Flashlight battery is dead — press R to load a new one.' : 'Flashlight battery is dead. Find a battery.', 4, true);
   }
   if (!show) return;
+  $('ammo-name').textContent = WEAPON_NAME[wpn.kind];
   $('ammo-loaded').textContent = loaded;
-  $('ammo-reserve').textContent = G.staplesReserve || 0;
+  $('ammo-reserve').textContent = reserve;
   el.classList.toggle('empty', loaded <= 0);
   el.classList.toggle('reloading', reloading);
   el.classList.toggle('dim', !which && !reloading);
   $('reload-fill').style.width = `${Math.round(Math.max(0, k) * 100)}%`;
   const click = which === 'off' ? 'right click' : 'left click';
   $('ammo-hint').textContent = reloading ? `RELOADING · ${Math.max(0, (G.reloadEnd - now) / 1000).toFixed(1)}s`
-    : !which ? `select slot ${ui.items.findIndex((i) => i.kind === 'stapler') + 1} to use`
-      : loaded <= 0 ? (G.staplesReserve ? 'EMPTY · press R to reload' : 'EMPTY · find a box of staples') : `${click} to fire`;
+    : !which ? `select slot ${ui.items.findIndex((i) => i.id === sid) + 1} to use`
+      : loaded <= 0 ? (reserve ? 'EMPTY · press R to reload' : wpn.kind === 'gun' ? 'EMPTY · no bullets left' : 'EMPTY · find a box of staples') : `${click} to fire`;
 }
 
 // ---------------------------------------------------------------- music

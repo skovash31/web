@@ -57,7 +57,19 @@ export const ITEM_INFO = {
   flashlight: { label: 'Flashlight', icon: 'flashlight' },
   coffee: { label: 'Cup of coffee', icon: 'coffee' },
   nothing: { label: 'Nothing Button', icon: 'nothing' },
+  gun: { label: 'Pistol', icon: 'gun' },
+  gunammo: { label: 'Box of bullets', icon: 'gunammo' },
   staples: { label: 'Box of staples', icon: 'staples' },
+};
+
+// The Nothing Button: 5 presses, then it's gone. Each press has a 1% chance of a gun.
+export const NOTHING = { presses: 5, gunChance: 0.01 };
+// The pistol you can (very rarely) get from a Nothing Button.
+export const GUN = {
+  magazine: 6, perBox: 12, reloadTime: 3, fireInterval: 0.6, range: 30,
+  stun: 30,      // seconds a hit stuns him
+  noise: 30,     // a gunshot: he hears it from far away
+  ammoKind: 'gunammo',
 };
 
 // Office coffee: a speed boost that doesn't cost stamina.
@@ -74,6 +86,7 @@ export const STAPLER = {
   range: 16,         // metres
   stun: 10,          // seconds a hit stuns him
   noise: 5,          // a sharp CLACK he can hear
+  ammoKind: 'staples',
 };
 
 // Lobby difficulty (host picks it). Multipliers are applied to each floor's CEO config.
