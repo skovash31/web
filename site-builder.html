@@ -32,6 +32,7 @@ h3{margin:8px 0 2px;font-size:11px;text-transform:uppercase;color:var(--mu);lett
 label{display:flex;flex-direction:column;gap:3px;color:var(--mu);font-size:11px}
 label input,label select{width:100%}
 .hint{color:var(--mu);font-size:12px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#222736;border:1px solid var(--ln);padding:10px 14px;border-radius:8px;z-index:9;display:none;max-width:90vw}
 @media(max-width:800px){header{flex-wrap:wrap}.hint{display:none}main{flex-direction:column;overflow-y:auto}aside,aside.r{width:100%;flex:none}#wrap{flex:none;padding:12px;order:-1}input,select,button{font-size:16px}.as img{height:70px}.pal{grid-template-columns:repeat(4,1fr)}}
 </style>
 </head>
@@ -40,6 +41,8 @@ label input,label select{width:100%}
 <b>🧱 Site Builder</b>
 <button id="pv">▶ Preview</button>
 <button id="ex">⬇ Export HTML</button>
+<button id="im">⬆ Import</button>
+<label style="flex-direction:row;align-items:center;gap:4px"><input type="checkbox" id="rep">Replace</label><input type="file" id="imf" accept=".html,.htm,.zip,image/*" multiple hidden>
 <button id="zp">📦 Download .zip</button>
 <button id="del">🗑 Delete</button>
 <span class="sp"></span>
@@ -63,6 +66,7 @@ label input,label select{width:100%}
 <div id="wrap"><div id="sz"><div id="cv"></div></div></div>
 <aside class="r" id="pp"></aside>
 </main>
+<div id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 const $=s=>document.querySelector(s);
@@ -143,6 +147,92 @@ function assetsUI(){
 }
 cv.ondragover=e=>e.preventDefault();
 cv.ondrop=e=>{e.preventDefault();const a=assets[+e.dataTransfer.getData('text/plain')];if(!a)return;const r=cv.getBoundingClientRect();mk('image',Math.round((e.clientX-r.left)/SC-120),Math.round((e.clientY-r.top)/SC-80),a)};
+const toHex=(()=>{const x=document.createElement('canvas').getContext('2d');return c=>{if(!c||c==='transparent')return'';x.fillStyle='#000';x.fillStyle=c;const v=x.fillStyle;return v[0]==='#'?v:''}})();
+const MIME={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml'};
+const rd=f=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',6000)}
+async function readFiles(list){
+ const htmls=[],imgs={};
+ for(const f of list){
+  const ext=(f.name.split('.').pop()||'').toLowerCase();
+  if(ext==='zip'){
+   if(!window.JSZip){toast('Zip support did not load.');continue}
+   const z=await JSZip.loadAsync(f);
+   for(const p of Object.keys(z.files)){
+    const zf=z.files[p];if(zf.dir||p.startsWith('__MACOSX'))continue;
+    const e=p.split('.').pop().toLowerCase(),b=p.split('/').pop();
+    if(e==='html'||e==='htm')htmls.push({name:b,text:await zf.async('string')});
+    else if(MIME[e])imgs[p]=imgs[b]='data:'+MIME[e]+';base64,'+await zf.async('base64');
+   }
+  }else if(ext==='html'||ext==='htm')htmls.push({name:f.name,text:await f.text()});
+  else if(MIME[ext])imgs[f.name]=await rd(f);
+ }
+ return{htmls,imgs};
+}
+function resolver(imgs,R){return s=>{if(!s)return'';if(/^(data:|https?:|blob:)/i.test(s))return s;let k=s.replace(/^(\.\/)+/,'').split(/[?#]/)[0];try{k=decodeURIComponent(k)}catch(e){}const v=imgs[k]||imgs[k.split('/').pop()];if(!v)R.miss++;return v||''}}
+function linkFrom(el,names){
+ const g=el.getAttribute('data-go');if(g!=null)return'page:'+(names[g]||g);
+ const u=el.getAttribute('data-url');if(u)return'url:'+u;
+ const h=el.tagName==='A'?el.getAttribute('href'):'';
+ return h&&!/^javascript:/i.test(h)?'url:'+h:'';
+}
+const uniq=(ex,n)=>{while(ex.has(n))n+=' (imported)';ex.add(n);return n};
+function parseBuilder(secs,rs,ex){
+ const names={};secs.forEach(s=>{names[s.dataset.n]=uniq(ex,s.dataset.n)});
+ return secs.map(s=>{
+  const bi=(s.style.backgroundImage.match(/url\(["']?(.*?)["']?\)/)||[])[1];
+  const pg={name:names[s.dataset.n],bg:toHex(s.style.backgroundColor)||'#ffffff',bgImg:bi?rs(bi):'',els:[]};
+  [...s.children].forEach(d=>{
+   const st=d.style,img=d.querySelector('img'),px=v=>parseInt(v)||0;
+   const e={id:uid++,x:px(st.left),y:px(st.top),w:px(st.width)||100,h:px(st.height)||40,color:toHex(st.color)||'#222222',bg:toHex(st.backgroundColor),size:px(st.fontSize)||16,text:img?'':d.textContent.trim(),src:'',link:linkFrom(d,names)};
+   if(img){e.type='image';e.src=rs(img.getAttribute('src'))}
+   else if(st.borderRadius)e.type='button';
+   else if(st.fontWeight==='700'||st.fontWeight==='bold')e.type='heading';
+   else if(!e.text)e.type='box';
+   else e.type='text';
+   pg.els.push(e)});
+  return pg})}
+function parseGeneric(doc,fname,rs,ex){
+ const base=fname.replace(/\.html?$/i,'')||'Imported',pgs=[];
+ const bg=toHex(doc.body.style.backgroundColor||doc.body.getAttribute('bgcolor'))||'#ffffff';
+ let pg,y;
+ const np=()=>{pg={name:uniq(ex,pgs.length?base+' '+(pgs.length+1):base),bg,els:[]};pgs.push(pg);y=30};
+ const add=(type,o,h)=>{if(y+h>580&&pg.els.length)np();pg.els.push({id:uid++,type,x:40,y,w:820,h,color:'#222222',bg:'',size:16,text:'',src:'',link:'',...o});y+=h+14};
+ const TXT=/^(P|LI|SPAN|LABEL|BLOCKQUOTE|PRE|TD|TH|FIGCAPTION|DT|DD|SMALL|STRONG|EM|B|I)$/;
+ const clean=s=>s.replace(/\s+/g,' ').trim();
+ const txt=t=>{if(t)add('text',{text:t},Math.max(30,Math.ceil(t.length*9/820)*26+8))};
+ const walk=el=>{for(const c of el.children){
+  const T=c.tagName;
+  if(/^(SCRIPT|STYLE|NOSCRIPT|META|LINK|TITLE|HEAD|SVG|IFRAME|CANVAS|VIDEO|AUDIO)$/i.test(T))continue;
+  if(/^H[1-6]$/.test(T)){const t=clean(c.textContent);if(t)add('heading',{text:t,size:{H1:40,H2:32,H3:26}[T]||20,color:'#111111'},{H1:60,H2:50,H3:40}[T]||34)}
+  else if(T==='IMG'){const s=rs(c.getAttribute('src'));if(s)add('image',{src:s,w:300},200)}
+  else if(T==='BUTTON'||T==='A'){
+   const im=c.querySelector('img'),t=clean(c.textContent);
+   if(im&&!t){const s=rs(im.getAttribute('src'));if(s)add('image',{src:s,w:300,link:linkFrom(c,{})},200)}
+   else if(t)add('button',{text:t,w:Math.min(820,Math.max(120,t.length*12+40)),bg:'#4f6bff',color:'#ffffff',link:linkFrom(c,{})},44)}
+  else if(TXT.test(T))txt(clean(c.textContent));
+  else{txt(clean([...c.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(' ')));walk(c)}
+ }};
+ np();walk(doc.body);return pgs}
+async function doImport(list){
+ const {htmls,imgs}=await readFiles(list);
+ if(!htmls.length){toast('Pick .html files or a .zip that contains them.');return}
+ const R={miss:0},rs=resolver(imgs,R),rep=$('#rep').checked,ex=new Set(rep?[]:pages.map(p=>p.name)),added=[],fmap={};
+ for(const h of htmls){
+  const doc=new DOMParser().parseFromString(h.text,'text/html'),secs=[...doc.querySelectorAll('section[data-n]')];
+  const ps=secs.length?parseBuilder(secs,rs,ex):parseGeneric(doc,h.name,rs,ex);
+  if(ps.length)fmap[h.name.toLowerCase()]=ps[0].name;added.push(...ps);
+ }
+ added.forEach(p=>p.els.forEach(e=>{if(e.link.startsWith('url:')){const k=e.link.slice(4).replace(/^(\.\/)+/,'').split(/[?#]/)[0].toLowerCase();if(fmap[k])e.link='page:'+fmap[k]}}));
+ [...new Set(Object.values(imgs))].forEach(v=>{if(!assets.includes(v))assets.push(v)});assetsUI();
+ if(rep)pages=added;else pages.push(...added);
+ cp=pages.indexOf(added[0]);sel=null;draw();
+ toast('Imported '+added.length+' page'+(added.length>1?'s':'')+(R.miss?' · '+R.miss+' image(s) not found: select the images or a .zip with them too':''));
+}
+$('#im').onclick=()=>$('#imf').click();
+$('#imf').onchange=async ev=>{const f=[...ev.target.files];ev.target.value='';try{await doImport(f)}catch(err){toast('Import failed: '+err.message)}};
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',async e=>{e.preventDefault();const f=[...(e.dataTransfer.files||[])];if(f.length)try{await doImport(f)}catch(err){toast('Import failed: '+err.message)}});
 $('#np').onclick=()=>{const n=prompt('Page name','Page '+(pages.length+1));if(n){pages.push({name:n,bg:'#ffffff',els:[]});cp=pages.length-1;sel=null;draw()}};
 $('#del').onclick=()=>{if(sel){P().els=P().els.filter(e=>e.id!==sel);sel=null;draw()}};
 addEventListener('keydown',e=>{if(e.key==='Delete'&&!/INPUT|SELECT/.test(document.activeElement.tagName))$('#del').click()});
