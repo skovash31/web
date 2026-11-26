@@ -62,20 +62,12 @@
       GoogleAuthProvider,
       signInWithEmailAndPassword,
       signInWithPopup,
-      auth,
-      database,
-      ref,
-      set
+      auth
     } from "./accounts/firebase.js";
     const accountKey = 'birdQuestXAccount';
 
-    async function rememberAccount(user) {
+    function rememberAccount(user) {
       const userName = user.displayName || user.email || 'Player';
-      await set(ref(database, `playerIds/${user.uid}`), user.uid);
-      await set(ref(database, `users/${user.uid}/profile`), {
-        playerId: user.uid,
-        username: userName
-      });
       localStorage.setItem(accountKey, JSON.stringify({
         username: userName,
         playerId: user.uid,
@@ -92,7 +84,7 @@
       const password = document.querySelector('#loginForm input[name="password"]').value;
       try {
         const credential = await signInWithEmailAndPassword(auth, email, password);
-        await rememberAccount(credential.user);
+        rememberAccount(credential.user);
         location.href = 'mainpage.html';
       } catch (err) {
         errorBox.textContent = err.message.replace("Firebase: ", "");
@@ -103,7 +95,7 @@
       errorBox.textContent = "";
       try {
         const credential = await signInWithPopup(auth, new GoogleAuthProvider());
-        await rememberAccount(credential.user);
+        rememberAccount(credential.user);
         location.href = "mainpage.html";
       } catch (err) {
         errorBox.textContent = err.message.replace("Firebase: ", "");
