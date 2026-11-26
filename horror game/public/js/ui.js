@@ -26,6 +26,17 @@ export class UI {
     $('name').value = localStorage.getItem('catinc.name') || '';
     $('save-code').value = localStorage.getItem('catinc.lastCode') || '';
     this.grain();
+    this.touch = null; // set by main.js on mobile: the on-screen TouchControls
+    this.onOffhandTap = null;
+    // Tappable on mobile only (gated by the .touch body class in CSS): pick a hotbar
+    // slot or swap hands by touch instead of the number keys / X.
+    $('inventory').addEventListener('pointerdown', (e) => {
+      const slot = e.target.closest('.slot');
+      if (!slot) return;
+      const i = [...$('inventory').children].indexOf(slot);
+      if (i >= 0) this.select(i);
+    });
+    $('offhand').addEventListener('pointerdown', () => this.onOffhandTap?.());
   }
 
   screen(name) {
@@ -66,6 +77,7 @@ export class UI {
     const el = $('prompt');
     if (text) { el.innerHTML = `<b>E</b>${escapeHtml(text)}`; $('crosshair').classList.add('active'); }
     else { el.innerHTML = ''; $('crosshair').classList.remove('active'); }
+    this.touch?.setPrompt(text);
   }
 
   message(text, dur = 4, priv = false) {

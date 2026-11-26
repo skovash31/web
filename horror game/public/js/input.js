@@ -1,7 +1,10 @@
-// Keyboard / mouse input with pointer lock. Exposes a per-frame snapshot.
+// Keyboard / mouse input with pointer lock, or touch input fed in by TouchControls.
+// Exposes a per-frame snapshot.
 export class Input {
-  constructor(canvas) {
+  constructor(canvas, { touch = false } = {}) {
     this.canvas = canvas;
+    this.touch = touch; // on mobile, gameplay is "active" without pointer lock
+    this.blocked = false; // true while a modal covers the screen
     this.keys = new Set();
     this.pressed = new Set(); // edge-triggered this frame
     this.dx = 0; this.dy = 0;
@@ -27,9 +30,9 @@ export class Input {
     window.addEventListener('wheel', (e) => { if (document.pointerLockElement === canvas) this.wheel += Math.sign(e.deltaY); }, { passive: true });
   }
 
-  get locked() { return document.pointerLockElement === this.canvas; }
+  get locked() { return this.touch || document.pointerLockElement === this.canvas; }
   lock() {
-    if (this.locked || !this.canvas.requestPointerLock) return;
+    if (this.touch || this.locked || !this.canvas.requestPointerLock) return;
     const plain = () => { try { const r = this.canvas.requestPointerLock(); r?.catch?.(() => {}); } catch { /* ignored */ } };
     try {
       // raw mouse input where supported; fall back to the plain request
@@ -37,13 +40,20 @@ export class Input {
       if (r?.catch) r.catch(plain);
     } catch { plain(); }
   }
-  unlock() { if (this.locked) document.exitPointerLock(); }
+  unlock() { if (!this.touch && this.locked) document.exitPointerLock(); }
 
   setSens(v) { this.sens = v; localStorage.setItem('catinc.sens', v); }
 
+  // Fed by TouchControls: a camera-look drag, in the same units as mouse movementX/Y.
+  addLook(dx, dy) { this.dx += dx; this.dy += dy; }
+  // Fed by TouchControls: an edge-triggered action (same effect as a keydown this frame).
+  press(code) { this.pressed.add(code); }
+  // Fed by TouchControls: a held button, as if a key were held down (or released).
+  hold(code, on) { if (on) this.keys.add(code); else this.keys.delete(code); }
+
   frame() {
     const k = this.keys, p = this.pressed;
-    const active = this.locked && this.enabled && !this.typing;
+    const active = this.locked && this.enabled && !this.typing && !this.blocked;
     const s = 0.0022 * this.sens;
     const out = {
       f: active && k.has('KeyW'), b: active && k.has('KeyS'), l: active && k.has('KeyA'), r: active && k.has('KeyD'),
