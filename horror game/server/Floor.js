@@ -1,7 +1,7 @@
 // Runtime state and rules for a single floor: doors, items, puzzles, hazards, triggers.
 // Everything here is authoritative; clients only send intents ("interact with X").
 import { Grid, C, toTile, tileCenter, mulberry32 } from '../shared/grid.js';
-import { PLAYER, NOISE, STAPLER, NOTHING } from '../shared/constants.js';
+import { PLAYER, NOISE, STAPLER, NOTHING, GUN } from '../shared/constants.js';
 
 export class Floor {
   constructor(level, room, seed) {
@@ -191,6 +191,8 @@ export class Floor {
     // the Nothing Button: it does nothing (almost). 2-4 in the office, 1 on every other floor
     const buttons = this.level.index === 0 ? 2 + Math.floor(this.rng() * 3) : 1;
     for (let i = 0; i < buttons; i++) place('nothing', 'Nothing Button', { presses: NOTHING.presses });
+    // bullets for the (very rare) pistol: once in a while, a box turns up on a lower floor
+    if (this.level.index > 0 && this.rng() < GUN.floorAmmoChance) place('gunammo', 'Box of bullets', { count: GUN.perBox });
     // coffee is left on desks (any low furniture if a floor has no free desk)
     const cups = this.level.index === 0 ? 2 : 1;
     for (let i = 0; i < cups; i++) {

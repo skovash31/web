@@ -70,6 +70,7 @@ export const GUN = {
   stun: 30,      // seconds a hit stuns him
   noise: 30,     // a gunshot: he hears it from far away
   ammoKind: 'gunammo',
+  floorAmmoChance: 0.2, // each lower floor (B1-B5) has this chance of hiding one box of bullets
 };
 
 // Office coffee: a speed boost that doesn't cost stamina.

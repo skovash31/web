@@ -27,7 +27,7 @@ You have two hands. The **main hand** (right of the screen) holds the selected h
 - **Coffee** (found on desks: 2 in the office, 1 per sublevel): 20 seconds of running 35% faster without using stamina. It carries between floors.
 - The stapler can be used from either hand (left click main, right click off hand).
 - **Nothing Button**: 2–4 in the office, 1 on every other floor, somewhere random. Press it (left click). It does nothing… usually. Each press has a **1% chance** to give you a **pistol** (loaded with 6, plus a box of 12 bullets). After **5 presses** the button crumbles away.
-- **Pistol**: a hit **stuns Mr. Thatch for 30 seconds** (a bullet during a staple stun upgrades it to 30 s; nothing ever adds up). Gunshots are loud — he hears them from 30 m. R reloads in 3 s.
+- **Pistol**: a hit **stuns Mr. Thatch for 30 seconds** (a bullet during a staple stun upgrades it to 30 s; nothing ever adds up). Gunshots are loud — he hears them from 30 m. R reloads in 3 s. Spare **boxes of bullets** (12 each) turn up rarely: each lower floor (B1–B5) has a 20% chance of hiding one.
 
 ## Story
 1. **The workday.** Clock in, print and deliver the quarterly report, file folders. Delivering the report brings out **Mr. Thatch, the CEO, in his human form** to introduce himself.

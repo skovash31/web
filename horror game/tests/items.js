@@ -24,6 +24,30 @@ function buttonTests() {
   ok(others, 'every other floor has exactly one');
 }
 
+function bulletSpawnTests() {
+  console.log('Bullet boxes');
+  const N = 200;
+  let office = 0, lower = 0, rounds = 0, bad = [];
+  for (const level of LEVELS) {
+    for (let seed = 1; seed <= N; seed++) {
+      const f = new Floor(level, fakeRoom(), seed * 3001 + level.index);
+      const boxes = [...f.items.values()].filter((i) => i.kind === 'gunammo');
+      if (level.index === 0) { office += boxes.length; continue; }
+      rounds++; lower += boxes.length;
+      const g = f.grid, sp = f.spawnTiles[0], reach = g.playerReachable(sp[0], sp[1], () => true);
+      for (const b of boxes) {
+        const tx = toTile(b.x), tz = toTile(b.z);
+        if (g.cell(tx, tz) !== C.FLOOR || !reach[tz * g.w + tx]) bad.push('unreachable');
+        if (b.count !== GUN.perBox) bad.push('count ' + b.count);
+      }
+    }
+  }
+  const rate = lower / rounds;
+  ok(office === 0, 'no bullet boxes in the office');
+  ok(Math.abs(rate - GUN.floorAmmoChance) < 0.05, `on lower floors a box turns up rarely: ${(rate * 100).toFixed(0)}% of the time (aim ${GUN.floorAmmoChance * 100}%)`);
+  ok(!bad.length, `each holds ${GUN.perBox} bullets and sits somewhere you can reach${bad.length ? ' — ' + [...new Set(bad)].join(', ') : ''}`);
+}
+
 function coffeeSpawnTests() {
   console.log('Coffee spawns');
   for (const level of LEVELS) {
@@ -143,6 +167,7 @@ export async function runOnlineItemTests() {
 
 export function runItemTests() {
   buttonTests();
+  bulletSpawnTests();
   coffeeSpawnTests();
   return { passed, failed };
 }
