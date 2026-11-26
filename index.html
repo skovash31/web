@@ -1,74 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Home</title>
-    <style>
-        body {
-            background-color: #121212;
-            color: #ffffff;
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-        }
-        h1 {
-            color: #00ff88;
-        }
-        .nav-container {
-            display: flex;
-            gap: 15px;
-            margin-top: 20px;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-        .btn {
-            background-color: #333333;
-            color: white;
-            padding: 12px 24px;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: bold;
-            transition: background 0.3s;
-        }
-        .btn:hover {
-            background-color: #555555;
-        }
-        .active {
-            background-color: #00ff88;
-            color: #121212;
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ThatOneIdleCat.shop</title>
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;color:#e8e0f5;background:#0b0b0f}
+  section{display:none;min-height:100vh;max-width:900px;margin:0 auto;padding:40px 20px;box-sizing:border-box;flex-direction:column}
+  section.on{display:flex}
+  #About{background:#150d20;max-width:none}
+  #About > *{max-width:860px;width:100%;margin-left:auto;margin-right:auto}
+  h1{font-size:40px;margin:20px 0 40px;text-align:center;color:#fff}
+  h2{font-size:32px;margin:0 0 16px;text-align:center;font-weight:600}
+  p{font-size:18px;line-height:1.5;margin:0 0 12px}
+  .center{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+  a.yt{color:#b57bff;font-size:18px}
+  .btn{display:inline-block;background:#7b2cbf;color:#fff;font-size:16px;font-weight:700;padding:14px 28px;border:0;border-radius:8px;cursor:pointer;text-decoration:none;font-family:inherit}
+  .btn:hover{background:#9d4edd}
+  .nav{display:flex;flex-direction:column;align-items:flex-end;gap:10px;margin-top:auto}
+  .nav .btn{width:170px;text-align:center;box-sizing:border-box}
+  .games{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+  @media(max-width:600px){
+    h1{font-size:28px}
+    .nav{align-items:stretch}
+    .nav .btn{width:100%}
+  }
+</style>
 </head>
 <body>
-    <h1>Links to other websites</h1>
 
-    <div class="nav-container">
-        <a href="BirdQuestX/index.html" class="btn active">Bird Quest X</a>
-        <a href="Kirby-V1/index.html" class="btn">Game website</a>
-        <a href="https://extra.thatoneidlecat.shop/horror%20game/" class="btn">Cat Incopratorited(Will take a sec)</a>
+<section id="Home" class="on">
+  <h1>ThatOneIdleCat.shop</h1>
+  <p>This website is owned by<br><a class="yt" href="https://www.youtube.com/@ThatOneIdleCat" target="_blank" rel="noopener">ThatOneIdleCat</a></p>
+  <div class="nav">
+    <button class="btn" data-go="Games">Games</button>
+    <button class="btn" data-go="About">About me</button>
+    <button class="btn" data-go="Money">Give me money</button>
+  </div>
+</section>
+
+<section id="About">
+  <div class="center">
+    <h2>About Me</h2>
+    <p>I'm a content creator that posts videos of my cat and I make games too.</p>
+  </div>
+  <div class="nav"><button class="btn" data-go="Home">Home Page</button></div>
+</section>
+
+<section id="Games">
+  <div class="center">
+    <h1>My games</h1>
+    <div class="games">
+      <a class="btn" href="BirdQuestX/index.html">Bird Quest X</a>
+      <a class="btn" href="Kirby-V1/index.html">Kirby V1</a>
+      <a class="btn" href="https://extra.thatoneidlecat.shop/horror%20game/">CAT Incorporated</a>
     </div>
-    <script>
-        function openTalkPage() {
-            window.location.href = "password.html";
-        }
+  </div>
+  <div class="nav"><button class="btn" data-go="Home">Home</button></div>
+</section>
 
-        const pressedKeys = new Set();
+<section id="Money">
+  <div class="center">
+    <h2>No way to give money rn</h2>
+  </div>
+  <div class="nav"><button class="btn" data-go="Home">Home</button></div>
+</section>
 
-        window.addEventListener("keydown", (event) => {
-            pressedKeys.add(event.key);
-            if (pressedKeys.has("G") && pressedKeys.has("R")) {
-                openTalkPage();
-            }
-        });
-
-        window.addEventListener("keyup", (event) => {
-            pressedKeys.delete(event.key);
-        });
-    </script>
+<script>
+document.addEventListener("click", function (e) {
+  var t = e.target.closest("[data-go]");
+  if (!t) return;
+  document.querySelectorAll("section").forEach(function (s) {
+    s.classList.toggle("on", s.id === t.dataset.go);
+  });
+  window.scrollTo(0, 0);
+});
+</script>
 </body>
 </html>
