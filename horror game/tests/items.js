@@ -85,6 +85,7 @@ export async function runOnlineItemTests() {
     s.on('ev', (e) => s.events.push(e));
     s.on('inv', (d) => { s.inv = d; });
     s.on('floor', (f) => { s.floor = f; });
+    s.on('snap', (x) => { s.snap = x; });
     for (const n of ['boost', 'medkit', 'battery']) s.on(n, (d) => { s.got[n] = d; });
     return s;
   };
@@ -99,6 +100,20 @@ export async function runOnlineItemTests() {
     await emit(b, 'joinRoom', { code: room.code, name: 'B' });
     a.emit('startGame'); await waitFor(() => a.floor && b.floor && a.inv && b.inv, 3000);
     ok(kinds(a).filter((k) => k === 'flashlight').length === 1 && kinds(b).filter((k) => k === 'flashlight').length === 1, 'every player starts with exactly one flashlight item');
+    // what you hold is shown to teammates, but only things you actually carry
+    await waitFor(() => a.snap && b.snap, 2000);
+    const st = (hm, ho) => { const me = a.snap.p.find((q) => q.id === a.id); a.emit('state', { x: me.x, y: 0, z: me.z, yaw: 0, pitch: 0, hm, ho }); };
+    st('gun', 'flashlight'); await sleep(250);
+    let seen = b.snap.p.find((q) => q.id === a.id);
+    ok(seen.ho === 'flashlight' && !seen.hm, "teammates see what's in your hands, but you can't fake holding something you don't have");
+    a.emit('debug', { giveKind: 'coffee' }); await waitFor(() => find(a, 'coffee'), 1000);
+    st('coffee', 'flashlight'); await sleep(250);
+    seen = b.snap.p.find((q) => q.id === a.id);
+    ok(seen.hm === 'coffee' && seen.ho === 'flashlight', 'switching items shows up for teammates');
+    const evB0 = b.events.length;
+    a.emit('useItem', find(a, 'coffee').id); await sleep(300);
+    ok(b.events.slice(evB0).some((e) => e.type === 'act' && e.id === a.id && e.what === 'drink'), 'teammates see you drink');
+    a.got = {};
     a.emit('dropItem', find(a, 'flashlight').id); await sleep(200);
     ok(kinds(a).includes('flashlight') && a.events.some((e) => e.type === 'msg' && /can't drop your flashlight/i.test(e.text)), "the flashlight can't be dropped");
     // coffee
@@ -128,7 +143,7 @@ export async function runOnlineItemTests() {
     a.emit('useItem', find(a, 'nothing').id); await sleep(400);
     const newA = a.events.slice(evA);
     ok(strip(a.inv.items) === before && JSON.stringify(a.got) === gotBefore && find(a, 'nothing').presses === NOTHING.presses - 1, 'pressing it does nothing (only one press used up): inventory, health, stamina, battery all the same');
-    ok(newA.every((e) => (e.type === 'sound' && e.name === 'nothing') || (e.type === 'msg' && e.private)) && b.events.length === evB, 'it only clicks for the presser (no noise for Mr. Thatch, nothing for teammates)');
+    ok(newA.every((e) => (e.type === 'sound' && e.name === 'nothing') || (e.type === 'msg' && e.private) || e.type === 'act') && b.events.slice(evB).every((e) => e.type === 'act' && e.what === 'press'), 'it only clicks for the presser: teammates just see the press, Mr. Thatch hears nothing');
     for (let i = 0; i < NOTHING.presses - 1; i++) { a.emit('useItem', find(a, 'nothing').id); await sleep(150); }
     await sleep(200);
     ok(!find(a, 'nothing') && !kinds(a).includes('gun'), `after ${NOTHING.presses} presses the button is gone`);

@@ -129,6 +129,16 @@ export function makeCar() {
 }
 
 // ---------------------------------------------------------------- employees
+// Teammates. player.glb has whole-limb pivots (no elbows/knees), so the motion comes from
+// how they're layered: stride direction (forward / back / sideways), sprint lean and arm
+// pump, crouch-walk, jumps, turning on the spot, idle breathing and glances, what's in
+// each hand and short one-shot actions (fire, reload, drink, heal...), and a real collapse.
+const _qa = new THREE.Quaternion(), _ea = new THREE.Euler();
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+// one-shot action lengths (seconds); reload uses the duration the server sends
+const ACT_LEN = { fire: 0.35, drink: 1.6, heal: 1.8, battery: 1.5, press: 0.45, pickup: 0.75, reload: 3 };
+
 export class PlayerRig {
   constructor(color) {
     this.root = new THREE.Group();
@@ -146,37 +156,198 @@ export class PlayerRig {
       const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 1.1, 4, 8), new THREE.MeshStandardMaterial({ color }));
       m.position.y = 0.85; this.root.add(m);
     }
-    // ID badge so co-workers are readable in the dark
-    this.flash = makeFlashlight();
-    if (this.armR) {
-      this.flash.position.set(0, -0.66, 0.02);
-      this.flash.rotation.x = -Math.PI / 2;
-      this.armR.add(this.flash);
+    // a holder at the end of each arm for whatever that hand carries
+    this.hands = {};
+    for (const [which, arm] of [['main', this.armR], ['off', this.armL]]) {
+      const holder = new THREE.Group();
+      holder.position.set(0, -0.66, 0.02);
+      arm?.add(holder);
+      this.hands[which] = { holder, kind: null, model: null };
     }
+    this.flash = null;       // the flashlight model in whichever hand (for the lens glow)
     this.phase = 0;
     this.crouchAmt = 0;
+    this.sprintAmt = 0;
+    this.air = 0;
+    this.deadT = -1;         // seconds since death (-1 = alive)
+    this.act = null;         // { what, t, len }
+    this.turnPhase = 0;
+    this.lastYaw = null;
+    this.idleT = Math.random() * 10;
+    this.glance = 0; this.glanceTarget = 0; this.glanceT = 2 + Math.random() * 4;
+    this.lastStepSign = 0;
+    this.stepCallback = null;
+    this.s = { legR: 0, legL: 0, legRz: 0, legLz: 0, armR: 0, armL: 0, armRz: 0, armLz: 0, torso: 0, torsoZ: 0, torsoY: 0, head: 0, headY: 0, y: 0 };
   }
 
-  update(dt, { speed = 0, crouch = false, pitch = 0, flashlight = false, alive = true }) {
+  // Put a held model (from makeHeldModel) in a hand, or null to empty it.
+  setHeld(which, kind, model) {
+    const h = this.hands[which];
+    if (!h || h.kind === kind) return;
+    if (h.model) h.holder.remove(h.model.root);
+    h.kind = kind; h.model = model || null;
+    if (model) {
+      // aimed things point along the arm; everything else is held upright in the fist
+      model.root.rotation.set(model.aim ? -Math.PI / 2 : 0, 0, 0);
+      h.holder.add(model.root);
+    }
+    this.flash = this.hands.main.kind === 'flashlight' ? this.hands.main.model : this.hands.off.kind === 'flashlight' ? this.hands.off.model : null;
+  }
+
+  // A one-shot action seen by teammates.
+  play(what, len) { this.act = { what, t: 0, len: len || ACT_LEN[what] || 0.6 }; }
+
+  // st: { speed, fwd, side, vy, crouch, sprint, pitch, yaw, flashlight, alive }
+  update(dt, st) {
     if (!this.model) return;
+    const { speed = 0, fwd = 1, side = 0, vy = 0, crouch = false, sprint = false, pitch = 0, yaw = 0, flashlight = false, alive = true } = st;
+    const s = this.s;
+    const k = Math.min(1, dt * 12);
+    this.idleT += dt;
+
+    // ---- death: knees buckle, then a backwards fall with a little bounce
+    if (!alive) {
+      if (this.deadT < 0) this.deadT = 0;
+      this.deadT += dt;
+      const t = this.deadT;
+      const buckle = ease(t / 0.35), fall = ease((t - 0.25) / 0.55);
+      const bounce = t > 0.8 && t < 1.1 ? Math.sin((t - 0.8) / 0.3 * Math.PI) * 0.06 : 0;
+      this.legR.rotation.set(-buckle * 0.9 * (1 - fall) - fall * 0.15, 0, 0.05);
+      this.legL.rotation.set(-buckle * 0.6 * (1 - fall) - fall * 0.05, 0, -0.08);
+      this.armR.rotation.set(-fall * 2.6, 0, 0.3 * fall);
+      this.armL.rotation.set(-fall * 2.4, 0, -0.4 * fall);
+      this.head.rotation.set(fall * 0.4, 0, 0.3 * fall);
+      this.torso.rotation.set(0, 0, 0);
+      this.model.rotation.x = -fall * Math.PI / 2;
+      this.model.position.y = -buckle * 0.3 * (1 - fall) + fall * 0.18 + bounce;
+      this.model.position.z = -fall * 0.25;
+      this.flash?.setOn?.(false);
+      return;
+    }
+    if (this.deadT >= 0) { this.deadT = -1; this.model.rotation.x = 0; this.model.position.z = 0; }
+
+    // ---- smoothed state
     this.crouchAmt += ((crouch ? 1 : 0) - this.crouchAmt) * Math.min(1, dt * 10);
+    this.sprintAmt += ((sprint && speed > 3 ? 1 : 0) - this.sprintAmt) * Math.min(1, dt * 6);
+    const airborne = Math.abs(vy) > 1.2;
+    this.air += ((airborne ? 1 : 0) - this.air) * Math.min(1, dt * 14);
+    const c = this.crouchAmt, sp = this.sprintAmt;
+
+    // turning on the spot shuffles the feet
+    let dyaw = 0;
+    if (this.lastYaw !== null) { dyaw = yaw - this.lastYaw; while (dyaw > Math.PI) dyaw -= Math.PI * 2; while (dyaw < -Math.PI) dyaw += Math.PI * 2; }
+    this.lastYaw = yaw;
+    const turning = speed < 0.3 && Math.abs(dyaw / Math.max(dt, 1e-3)) > 1.2;
+    if (turning) this.turnPhase += dt * 9; else this.turnPhase *= 0.9;
+
+    // ---- stride
     const moving = speed > 0.3;
-    this.phase += dt * (moving ? 4 + speed * 1.6 : 0);
-    const sw = moving ? Math.sin(this.phase) * Math.min(0.9, 0.25 + speed * 0.14) : 0;
-    const c = this.crouchAmt;
-    this.legR.rotation.x = sw - c * 1.1;
-    this.legL.rotation.x = -sw - c * 1.1;
-    this.armL.rotation.x = -sw * 0.8;
-    // flashlight arm points where they're looking
-    this.armR.rotation.x = flashlight ? -Math.PI / 2 - pitch : sw * 0.8;
-    this.armR.rotation.z = 0;
-    this.head.rotation.x = -pitch * 0.6;
-    this.model.position.y = -c * 0.42 + (moving ? Math.abs(Math.cos(this.phase)) * 0.03 : 0);
-    this.torso.rotation.x = c * 0.35;
-    if (!alive) { this.model.rotation.x = -Math.PI / 2; this.model.position.y = 0.2; }
-    else this.model.rotation.x = 0;
+    this.phase += dt * (moving ? 3.2 + speed * 1.45 : 0);
+    const p = this.phase, sn = Math.sin(p), cs = Math.cos(p);
+    // footsteps on each plant
+    const sign = Math.sign(sn);
+    if (moving && sign !== this.lastStepSign && this.stepCallback) this.stepCallback(speed);
+    this.lastStepSign = sign;
+    const amp = moving ? Math.min(0.95, 0.22 + speed * 0.13) * (1 - c * 0.45) : 0;
+    const dir = fwd >= -0.2 ? 1 : -1;                      // walking backwards swings the other way
+    const fw = Math.min(1, Math.abs(fwd) + 0.15), sw = Math.min(1, Math.abs(side));
+    let legR = sn * amp * fw * dir, legL = -sn * amp * fw * dir;
+    let legRz = Math.max(0, sn) * amp * sw * 0.6 * Math.sign(side || 1), legLz = -Math.max(0, -sn) * amp * sw * 0.6 * Math.sign(side || 1);
+    if (turning) { legR += Math.sin(this.turnPhase) * 0.25; legL -= Math.sin(this.turnPhase) * 0.25; }
+    // crouch: bent stance
+    legR -= c * 1.0; legL -= c * 1.0;
+    // jump: knees up
+    legR = lerp(legR, -0.7, this.air); legL = lerp(legL, -0.35, this.air);
+
+    // arms: counter-swing, pumping harder when sprinting
+    const armAmp = amp * (0.75 + sp * 0.6);
+    let armR = -sn * armAmp * dir, armL = sn * armAmp * dir;
+    let armRz = 0.06 + sp * 0.1, armLz = -0.06 - sp * 0.1;
+    // idle: breathing and the occasional glance around
+    const breathe = Math.sin(this.idleT * 1.7) * (moving ? 0 : 1);
+    if (!moving) { armR += breathe * 0.02; armL -= breathe * 0.02; }
+    this.glanceT -= dt;
+    if (this.glanceT <= 0) { this.glanceT = 2.5 + Math.random() * 5; this.glanceTarget = moving ? 0 : (Math.random() - 0.5) * 1.1; }
+    this.glance += (this.glanceTarget - this.glance) * Math.min(1, dt * 3);
+
+    // ---- what the hands hold: aimed things follow the look direction
+    const aimMain = this.hands.main.model?.aim, aimOff = this.hands.off.model?.aim;
+    const flashOff = this.hands.off.kind === 'flashlight', flashMain = this.hands.main.kind === 'flashlight';
+    const aimPose = -Math.PI / 2 - pitch;
+    const mainUp = aimMain && (this.hands.main.kind !== 'flashlight' || flashlight);
+    const offUp = aimOff && (this.hands.off.kind !== 'flashlight' || flashlight);
+    if (mainUp && sp < 0.5) armR = lerp(armR, aimPose, 0.92);
+    else if (this.hands.main.model && !aimMain) armR = lerp(armR, -0.55, 0.8);   // holding something in front
+    if (offUp && sp < 0.5) armL = lerp(armL, aimPose + 0.08, 0.92);
+    else if (this.hands.off.model && !aimOff) armL = lerp(armL, -0.5, 0.8);
+    if ((mainUp || offUp) && sp < 0.5) { armRz = mainUp ? 0.02 : armRz; armLz = offUp ? -0.02 : armLz; }
+    void flashOff; void flashMain;
+
+    // jump: arms out
+    armR = lerp(armR, -0.6, this.air * 0.5); armL = lerp(armL, -0.6, this.air * 0.5);
+    armRz = lerp(armRz, 0.5, this.air); armLz = lerp(armLz, -0.5, this.air);
+
+    // ---- body
+    let torso = c * 0.35 + sp * 0.28 + (moving ? 0.04 : 0) + breathe * 0.01;
+    let torsoZ = moving ? cs * 0.04 * fw : 0;
+    let torsoY = moving ? sn * 0.12 * fw * (1 + sp) : 0;
+    let head = -pitch * 0.55 - torso * 0.6;
+    let headY = -torsoY * 0.8 + this.glance;
+    let bodyY = -c * 0.42 + (moving ? Math.abs(cs) * (0.025 + sp * 0.03) : breathe * 0.004) + this.air * 0.05;
+
+    // ---- one-shot actions
+    const a = this.act;
+    if (a) {
+      a.t += dt;
+      const u = Math.min(1, a.t / a.len);
+      const bell = Math.sin(u * Math.PI);                     // 0 -> 1 -> 0
+      const hold = ease(u / 0.25) * (1 - ease((u - 0.75) / 0.25)); // up, hold, down
+      switch (a.what) {
+        case 'fire': armR -= 0.35 * Math.max(0, 1 - u * 3) * (this.hands.main.model?.aim ? 1 : 0); armL -= 0.35 * Math.max(0, 1 - u * 3) * (!this.hands.main.model?.aim && aimOff ? 1 : 0); head -= 0.08 * bell; break;
+        case 'drink': {
+          const arm = this.hands.main.kind === 'coffee' || !this.hands.off.kind ? 'R' : 'L';
+          // no elbows: swing the arm up in front of the face, cross it inward, tip the head back
+          if (arm === 'R') { armR = lerp(armR, -1.75, hold); armRz = lerp(armRz, -0.55, hold); } else { armL = lerp(armL, -1.75, hold); armLz = lerp(armLz, 0.55, hold); }
+          head -= 0.5 * hold; torso -= 0.1 * hold;
+          this.tip = hold;
+          break;
+        }
+        case 'heal': armR = lerp(armR, -1.2 + Math.sin(a.t * 12) * 0.15, hold); armL = lerp(armL, -1.1 - Math.sin(a.t * 12) * 0.15, hold); armRz = lerp(armRz, -0.5, hold); armLz = lerp(armLz, 0.5, hold); head += 0.35 * hold; break;
+        case 'battery': armR = lerp(armR, -1.3, hold); armL = lerp(armL, -1.0 + Math.sin(a.t * 10) * 0.12, hold); armLz = lerp(armLz, 0.45, hold); head += 0.3 * hold; break;
+        case 'reload': armR = lerp(armR, -1.1, hold); armL = lerp(armL, -1.0 + (u > 0.3 && u < 0.7 ? Math.sin(a.t * 14) * 0.15 : 0), hold); armRz = lerp(armRz, -0.3, hold); armLz = lerp(armLz, 0.4, hold); head += 0.3 * hold; break;
+        case 'press': armR = lerp(armR, -1.0, bell); head += 0.25 * bell; break;
+        case 'pickup': torso += 0.7 * bell; bodyY -= 0.25 * bell; armR = lerp(armR, -0.9, bell); legR -= 0.6 * bell; legL -= 0.3 * bell; head += 0.2 * bell; break;
+        default: break;
+      }
+      if (a.t >= a.len) this.act = null;
+    }
+
+    // ---- apply (smoothed, so pose changes blend instead of snapping)
+    const tgt = { legR, legL, legRz, legLz, armR, armL, armRz, armLz, torso, torsoZ, torsoY, head, headY, y: bodyY };
+    for (const key in tgt) s[key] += (tgt[key] - s[key]) * (key === 'y' ? Math.min(1, dt * 18) : k);
+    this.legR.rotation.set(s.legR, 0, s.legRz);
+    this.legL.rotation.set(s.legL, 0, s.legLz);
+    this.armR.rotation.set(s.armR, 0, s.armRz);
+    this.armL.rotation.set(s.armL, 0, s.armLz);
+    this.torso.rotation.set(s.torso, s.torsoY, s.torsoZ);
+    this.head.rotation.set(s.head, s.headY, 0);
+    this.model.position.y = s.y;
+    this.model.rotation.x = 0;
+    // held items: aimed ones point along the arm; others stay upright in the fist
+    for (const [which, armRot] of [['main', s.armR], ['off', s.armL]]) {
+      const h = this.hands[which];
+      if (h.model && !h.model.aim) h.model.root.rotation.x = -armRot - s.torso * 0.5 + (this.act?.what === 'drink' ? (this.tip || 0) * 0.9 : 0); // tip the cup back to drink
+    }
+    this.flash?.setOn?.(!!flashlight);
+  }
+
+  // where the flashlight beam starts (world space), if a hand holds it
+  flashWorldPos(out) {
+    if (!this.flash) return null;
+    return this.flash.root.getWorldPosition(out);
   }
 }
+void _qa; void _ea;
 
 // ---------------------------------------------------------------- Mr. Thatch, human disguise
 // The provided boss.glb (top hat, gold company badge), animated like the employees.

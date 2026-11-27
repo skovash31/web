@@ -2,6 +2,7 @@
 // nameplates and spatial footsteps.
 import * as THREE from 'three';
 import { PlayerRig, MonsterRig, HumanRig } from './models.js';
+import { makeHeldModel } from './props.js';
 import { PLAYER_COLORS } from '../shared/constants.js';
 import { textTexture } from './textures.js';
 import { toTile, C } from '../shared/grid.js';
@@ -62,6 +63,13 @@ export class Remotes {
         rig.root.add(tag);
         this.scene.add(rig.root);
         r = { id: p.id, name: p.name, color: p.color, rig, buf: new Buffer(), state: null, stepPhase: 0, tag };
+        // footsteps land when a foot plants in the animation
+        rig.stepCallback = () => {
+          const st = r.state;
+          if (!st || !st.alive || st.hidden) return;
+          const at = rig.root.position;
+          this.audio.footstep(this.getSurface(at.x, at.z), [at.x, 0.1, at.z], st.sprint ? 'sprint' : st.crouch ? 'crouch' : 'walk');
+        };
         this.players.set(p.id, r);
       }
       r.alive = p.alive !== false;
@@ -98,7 +106,7 @@ export class Remotes {
     for (const p of snap.p) {
       if (p.id === myId) continue;
       const r = this.players.get(p.id);
-      if (r) r.buf.push(snap.t, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, f: p.f, h: p.h, hp: p.hp });
+      if (r) r.buf.push(snap.t, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, f: p.f, h: p.h, hp: p.hp, hm: p.hm || null, ho: p.ho || null });
     }
     if (snap.c) { this.ceoBuf.push(snap.t, { x: snap.c.x, y: 0, z: snap.c.z, yaw: snap.c.yaw, st: snap.c.st, an: snap.c.an, sp: snap.c.sp, fm: snap.c.fm, bl: snap.c.bl || 0, cd: snap.c.cd || 0, sn: snap.c.sn || 0 }); }
     this.ceoActive = !!snap.ca;
@@ -117,22 +125,28 @@ export class Remotes {
       const prev = r.rig.root.position.clone();
       r.rig.root.position.set(s.x, s.y || 0, s.z);
       r.rig.root.rotation.y = s.yaw;
-      const speed = prev.distanceTo(r.rig.root.position) / Math.max(dt, 1e-3);
-      r.speed = (r.speed ?? 0) + (Math.min(speed, 7) - (r.speed ?? 0)) * Math.min(1, dt * 10);
-      r.rig.update(dt, { speed: r.speed, crouch: r.state.crouch, pitch: s.pitch || 0, flashlight: r.state.flashlight, alive });
-      r.rig.flash?.userData.setOn?.(r.state.flashlight && alive && !hidden);
-      r.tag.visible = alive;
-      // footsteps
-      if (alive && !hidden && r.speed > 0.5) {
-        const before = r.stepPhase;
-        r.stepPhase += dt * (r.state.sprint ? 11 : r.state.crouch ? 5 : 7.5);
-        if (Math.floor(before / Math.PI) !== Math.floor(r.stepPhase / Math.PI)) this.audio.footstep(this.getSurface(s.x, s.z), [s.x, 0.1, s.z], r.state.sprint ? 'sprint' : r.state.crouch ? 'crouch' : 'walk');
+      // velocity: how fast, which way relative to where they face, and up/down (jumps)
+      const vx = (s.x - prev.x) / Math.max(dt, 1e-3), vz = (s.z - prev.z) / Math.max(dt, 1e-3), vyRaw = ((s.y || 0) - prev.y) / Math.max(dt, 1e-3);
+      const speed = Math.hypot(vx, vz);
+      r.speed = (r.speed ?? 0) + (Math.min(speed, 8) - (r.speed ?? 0)) * Math.min(1, dt * 10);
+      r.vy = (r.vy ?? 0) + (Math.max(-8, Math.min(8, vyRaw)) - (r.vy ?? 0)) * Math.min(1, dt * 12);
+      if (speed > 0.3) {
+        const fwd = (vx * Math.sin(s.yaw) + vz * Math.cos(s.yaw)) / speed, side = (vx * -Math.cos(s.yaw) + vz * Math.sin(s.yaw)) / speed;
+        r.fwd = (r.fwd ?? 1) + (fwd - (r.fwd ?? 1)) * Math.min(1, dt * 8);
+        r.side = (r.side ?? 0) + (side - (r.side ?? 0)) * Math.min(1, dt * 8);
       }
-      // flashlight beam
+      // what's in their hands
+      for (const [which, kind] of [['main', s.hm], ['off', s.ho]]) {
+        if (r.rig.hands[which].kind !== (kind || null)) r.rig.setHeld(which, kind || null, kind ? makeHeldModel(kind) : null);
+      }
+      r.rig.update(dt, { speed: r.speed, fwd: r.fwd ?? 1, side: r.side ?? 0, vy: r.vy, crouch: r.state.crouch, sprint: r.state.sprint, pitch: s.pitch || 0, yaw: s.yaw, flashlight: r.state.flashlight && alive && !hidden, alive });
+      r.tag.visible = alive;
+      // flashlight beam: from the flashlight in their hand when they hold one
       if (r.state.flashlight && alive && !hidden && spotI < this.spots.length) {
         const sp = this.spots[spotI++];
         const eye = (r.state.crouch ? 0.95 : 1.5);
-        sp.position.set(s.x + Math.sin(s.yaw) * 0.3, (s.y || 0) + eye, s.z + Math.cos(s.yaw) * 0.3);
+        r.rig.root.updateMatrixWorld(true);
+        if (!r.rig.flashWorldPos(sp.position)) sp.position.set(s.x + Math.sin(s.yaw) * 0.3, (s.y || 0) + eye, s.z + Math.cos(s.yaw) * 0.3);
         const cp = Math.cos(s.pitch || 0);
         sp.target.position.set(s.x + Math.sin(s.yaw) * cp * 8, (s.y || 0) + eye + Math.sin(s.pitch || 0) * 8, s.z + Math.cos(s.yaw) * cp * 8);
         sp.intensity = 30;
@@ -208,6 +222,9 @@ export class Remotes {
     }
     this.flareT = 0.6;
   }
+
+  // A teammate's visible action (fire, reload, drink, heal, battery, press, pickup).
+  playAct(id, what, len) { this.players.get(id)?.rig.play(what, len); }
 
   living() { return [...this.players.values()].filter((r) => r.state?.alive); }
 }

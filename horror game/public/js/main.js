@@ -296,10 +296,15 @@ function handleEvent(e) {
       break;
     }
     case 'item': {
+      const was = world.items.get(e.item.id);
       world.updateItem(e.item);
       if (e.item.state === 'held' && e.item.holder === G.myId) audio.play('pickup');
+      // teammates bend down to pick things up / put them down
+      if (e.item.state === 'held' && e.item.holder && e.item.holder !== G.myId && was?.state === 'world') remotes.playAct(e.item.holder, 'pickup');
+      if (e.item.state === 'world' && was?.state === 'held' && was.holder && was.holder !== G.myId) remotes.playAct(was.holder, 'pickup');
       break;
     }
+    case 'act': if (e.id !== G.myId) remotes.playAct(e.id, e.what, e.dur); break;
     case 'flag':
       if (e.on) G.flags.add(e.name); else G.flags.delete(e.name);
       if (G.level) ui.objectives(G.level, G.flags);
@@ -396,6 +401,7 @@ function handleEvent(e) {
     case 'trap': world.setTrapSealed(); me.shake = 2; break;
     case 'staple': {
       stapleFX.shot(e);
+      if (e.by !== G.myId) remotes.playAct(e.by, 'fire');
       if (e.by !== G.myId) audio.play(e.weapon === 'gun' ? 'gunshot' : 'staple', [e.from[0], e.from[2]]);
       if (e.by === G.myId && e.hit) story.say('you', e.weapon === 'gun' ? (e.stunned ? "He's DOWN. That'll hold him for a while!" : 'Hit him!') : e.stunned ? pick(['Got him!', 'Right in him — MOVE!', "He's down! Go, go!"]) : 'Another one in him.', { priority: true, key: 'staplehit', cooldown: e.stunned ? 0 : 6 });
       break;
@@ -929,7 +935,7 @@ function frame(now) {
   // network upload
   if (now - G.lastSend > 1000 / SEND_RATE && me.alive) {
     G.lastSend = now;
-    net.volatile.emit('state', { x: +me.pos.x.toFixed(3), y: +me.pos.y.toFixed(3), z: +me.pos.z.toFixed(3), yaw: +me.yaw.toFixed(3), pitch: +me.pitch.toFixed(3), crouch: me.crouch, sprint: me.sprinting, moving: me.moving && me.speedNow > 0.3, flashlight: me.flashlight });
+    net.volatile.emit('state', { x: +me.pos.x.toFixed(3), y: +me.pos.y.toFixed(3), z: +me.pos.z.toFixed(3), yaw: +me.yaw.toFixed(3), pitch: +me.pitch.toFixed(3), crouch: me.crouch, sprint: me.sprinting, moving: me.moving && me.speedNow > 0.3, flashlight: me.flashlight, hm: mainItem()?.kind || null, ho: offItem()?.kind || null });
   }
 
   remotes.update(dt);

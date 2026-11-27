@@ -259,6 +259,7 @@ export class Room {
         id: p.id, x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(2),
         f: (p.crouch ? 1 : 0) | (p.sprint ? 2 : 0) | (p.moving ? 4 : 0) | (p.flashlight ? 8 : 0) | (p.alive ? 16 : 0),
         h: p.hidden, hp: Math.round(p.health),
+        ...(p.handMain ? { hm: p.handMain } : {}), ...(p.handOff ? { ho: p.handOff } : {}),
       });
     }
     const c = this.ceo;
@@ -277,6 +278,9 @@ export class Room {
     p.yaw = num(s.yaw, p.yaw); p.pitch = num(s.pitch, p.pitch);
     p.crouch = !!s.crouch; p.sprint = !!s.sprint; p.moving = !!s.moving;
     if (!!s.flashlight !== p.flashlight) { p.flashlight = !!s.flashlight; }
+    // what's in their hands, so teammates see it (only kinds they actually carry)
+    const holds = (k) => (typeof k === 'string' && p.inventory.some((iid) => this.floor.items.get(iid)?.kind === k) ? k : null);
+    p.handMain = holds(s.hm); p.handOff = holds(s.ho);
     if (p.hidden) { p.moving = false; return; }
     const nx = num(s.x, p.x), ny = num(s.y, p.y), nz = num(s.z, p.z);
     const now = Date.now();
@@ -311,12 +315,14 @@ export class Room {
     if (it.kind === 'battery') {
       p.inventory.splice(idx, 1); it.state = 'used';
       p.socket.emit('battery', { value: PLAYER.maxBattery });
+      this.act(p, 'battery');
       this.tell(p, 'Fresh battery in.');
     } else if (it.kind === 'medkit') {
       // heals, and the client refills stamina / clears exhaustion when it gets 'medkit'
       p.inventory.splice(idx, 1); it.state = 'used';
       p.health = Math.min(PLAYER.maxHealth, p.health + MEDKIT.heal);
       p.socket.emit('medkit', { health: p.health });
+      this.act(p, 'heal');
       this.noiseSound(p.x, p.z, 'medkit');
       this.tell(p, 'You patch yourself up and catch your breath.');
     } else if (it.kind === 'nothing') {
@@ -325,6 +331,7 @@ export class Room {
       p.inventory.splice(idx, 1); it.state = 'used';
       p.boostUntil = Date.now() + COFFEE.duration * 1000;
       p.socket.emit('boost', { dur: COFFEE.duration, speed: COFFEE.speed });
+      this.act(p, 'drink');
       this.noiseSound(p.x, p.z, 'slurp');
     } else if (it.kind === 'stapler') {
       return this.handleReload(p, it.id);
@@ -338,8 +345,12 @@ export class Room {
 
   // The Nothing Button. It (almost) always does nothing: only the presser hears the click
   // and Mr. Thatch doesn't. 1 press in 100 gives you a pistol. After 5 presses it's gone.
+  // A short visible action for teammates' view of this player (drink, heal, reload...).
+  act(p, what, extra = {}) { this.broadcastEvent({ type: 'act', id: p.id, what, ...extra }); }
+
   pressNothing(p, it, idx) {
     p.socket.emit('ev', { type: 'sound', name: 'nothing' });
+    this.act(p, 'press');
     it.presses = (it.presses ?? NOTHING.presses) - 1;
     const roll = p.forceLuck ? 0 : p.noLuck ? 1 : this.rng();
     p.forceLuck = false;
@@ -439,6 +450,7 @@ export class Room {
     const token = { stapler: st.id, floor: this.floor };
     p.reload = token;
     this.sendInventory(p, W.reloadTime);
+    this.act(p, 'reload', { dur: W.reloadTime, weapon: st.kind });
     this.noiseSound(p.x, p.z, st.kind === 'gun' ? 'gunReload' : 'staplerOpen');
     this.floor.after(W.reloadTime, () => this.finishReload(p, token));
   }
@@ -542,6 +554,7 @@ export class Room {
     p.alive = false;
     p.health = 0;
     p.reload = null;
+    p.handMain = null; p.handOff = null;
     if (p.hidden) p.hidden = null;
     this.stats.deaths++;
     this.broadcastEvent({ type: 'death', id: p.id, name: p.name, cause, at: [p.x, p.z] });

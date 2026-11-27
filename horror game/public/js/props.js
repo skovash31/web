@@ -2,7 +2,7 @@
 // (toward the open floor); wall-mounted parts sit at local z ≈ -0.95 (the wall face).
 import * as THREE from 'three';
 import { tex, textTexture } from './textures.js';
-import { makeStapler, makeStaplesBox, makeItemModel } from './models.js';
+import { makeStapler, makeStaplesBox, makeItemModel, makeFlashlight, makeGun } from './models.js';
 
 const M = new Map();
 export function mat(name) {
@@ -330,6 +330,22 @@ export function buildProp(model, ent, r = Math.random) {
 }
 
 // Small pickup meshes (kept dynamic so they can bob / be hidden)
+// What a teammate holds: aimed things (flashlight, stapler, gun) point along the arm,
+// anything else is shrunk into the fist. Returns { root, aim, setOn? }.
+export function makeHeldModel(kind) {
+  if (kind === 'flashlight') { const m = makeFlashlight(); m.scale.setScalar(0.95); return { root: m, aim: true, setOn: m.userData.setOn }; }
+  if (kind === 'stapler') { const s = makeStapler(); if (s) { s.root.scale.setScalar(1.1); return { root: s.root, aim: true }; } }
+  if (kind === 'gun') { const g = makeGun(); if (g) { g.root.scale.setScalar(1.05); return { root: g.root, aim: true }; } }
+  const m = buildItem(kind);
+  const box = new THREE.Box3().setFromObject(m);
+  const size = box.getSize(new THREE.Vector3());
+  const k = 0.16 / Math.max(0.01, size.x, size.y, size.z);
+  m.scale.multiplyScalar(k);
+  m.position.set(-(box.min.x + size.x / 2) * k, -box.min.y * k - 0.03, 0.04 - (box.min.z + size.z / 2) * k);
+  const root = new THREE.Group(); root.add(m);
+  return { root, aim: false };
+}
+
 export function buildItem(kind, key) {
   const g = new THREE.Group();
   // items with a model in "3d models/" use it
