@@ -204,7 +204,9 @@ export async function runOnlineStaplerTests() {
     const shot = a.events.find((e) => e.type === 'staple' && e.hit);
     ok(!!shot && shot.stunned && shot.stuck?.bone === 'Torso', `a staple hits him and sticks where it hit (${tries} shot${tries > 1 ? 's' : ''})`);
     ok(await waitFor(() => b.events.some((e) => e.type === 'staple' && e.hit) && b.events.some((e) => e.type === 'ceo' && e.what === 'stun'), 1000), 'the other player sees the hit, the stuck staple and the stun');
-    ok(stapler().ammo === 20 - tries, `each shot uses one staple (${stapler().ammo} left)`);
+    await sleep(150);
+    const fired = a.events.filter((e) => e.type === 'staple' && e.by === a.id).length; // what the server actually fired
+    ok(stapler().ammo === 20 - fired, `each shot uses one staple (${fired} fired, ${stapler().ammo} left)`);
     await sleep(300);
     const s1 = b.snaps.at(-1).c;
     ok(s1.sn > 8 && s1.sn <= STAPLER.stun && s1.an === 'stunned', `snapshots carry the stun to everyone (${s1.sn} s left)`);
