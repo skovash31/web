@@ -666,6 +666,7 @@ export class Floor {
 
   on_hide(p, e) {
     if (this.room.alivePlayers().some((q) => q.hidden === e.id)) return this.room.tell(p, 'Someone is already hiding in there.');
+    if ((e.lurkUntil || 0) > this.time) return this.room.tell(p, "Something is still in there. You're not getting back in.");
     p.hidden = e.id;
     p.hideNoise = false;
     p.preHide = { x: p.x, z: p.z };
@@ -674,7 +675,7 @@ export class Floor {
     this.room.noise(p.x, p.z, 3, p, 'hide');
   }
 
-  leaveHide(p) {
+  leaveHide(p, { shove = false } = {}) {
     const e = this.ents.get(p.hidden);
     p.hidden = null;
     p._hidWhileSeen = false;
@@ -684,7 +685,8 @@ export class Floor {
       const pt = this.exitPoint(e, p.preHide);
       p.x = pt.x; p.z = pt.z; p.y = 0; p.vx = 0; p.vz = 0;
       p.grace = Math.max(p.grace || 0, 0.6);
-      this.room.toPlayer(p, 'teleport', { x: p.x, y: 0, z: p.z, yaw: e.facing });
+      // shoved out: you land facing the locker, so you see what pushed you
+      this.room.toPlayer(p, 'teleport', { x: p.x, y: 0, z: p.z, yaw: shove ? e.facing + Math.PI : e.facing });
     }
     this.room.broadcastEvent({ type: 'hide', player: p.id, spot: e?.id, on: false });
     this.room.noise(p.x, p.z, 3, p, 'hide');

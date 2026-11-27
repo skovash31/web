@@ -373,6 +373,23 @@ export class Audio {
       case 'hide': this.noise({ type: 'bandpass', freq: 700, q: 2, dur: 0.3, gain: 0.3, at: A, verb: 0.3 }); this.tone({ type: 'triangle', freq: 200, dur: 0.2, gain: 0.08, at: A }); break;
       case 'locker': this.noise({ type: 'bandpass', freq: 1200, q: 5, dur: 0.5, gain: 0.5, at: A, verb: 0.5 }); this.tone({ type: 'square', freq: 140, freqEnd: 90, dur: 0.4, gain: 0.2, at: A }); break;
       case 'jumpscare': this.noise({ type: 'highpass', freq: 800, dur: 1.4, gain: 1.4, verb: 0.3 }); this.tone({ type: 'sawtooth', freq: 440, freqEnd: 110, dur: 1.4, gain: 0.6 }); this.tone({ type: 'square', freq: 466, freqEnd: 117, dur: 1.4, gain: 0.4 }); break;
+      // the Lurker: a wet snarl and a shriek as it bursts out of a locker
+      case 'lurker':
+        this.noise({ type: 'lowpass', freq: 1800, freqEnd: 300, dur: 0.5, gain: 1.0, at: A, verb: 0.6 });
+        this.tone({ type: 'sawtooth', freq: 95, freqEnd: 55, dur: 1.3, gain: 0.4, at: A, verb: 0.7, attack: 0.02 });
+        this.tone({ type: 'square', freq: 70, freqEnd: 48, dur: 1.1, gain: 0.18, at: A, verb: 0.6, delay: 0.05 });
+        this.tone({ type: 'sawtooth', freq: 1400, freqEnd: 2300, dur: 0.6, gain: 0.22, at: A, verb: 0.8, delay: 0.12 });
+        this.noise({ type: 'bandpass', freq: 3000, freqEnd: 1200, q: 2, dur: 0.9, gain: 0.45, at: A, verb: 0.8, delay: 0.1 });
+        break;
+      // ...and the breathing / scratching that warns you it's waking up
+      case 'lurkerBreath':
+        this.noise({ type: 'bandpass', freq: 520, freqEnd: 760, q: 1.4, dur: 0.9, gain: 0.32, at: A, verb: 0.2, attack: 0.35 });
+        this.noise({ type: 'bandpass', freq: 680, freqEnd: 380, q: 1.4, dur: 0.8, gain: 0.26, at: A, verb: 0.2, attack: 0.1, delay: 0.95 });
+        this.tone({ type: 'sawtooth', freq: 62, freqEnd: 55, dur: 0.7, gain: 0.05, at: A, delay: 0.95 });
+        break;
+      case 'scratch':
+        for (let i = 0; i < 5; i++) this.noise({ type: 'highpass', freq: 3200 + Math.random() * 1500, dur: 0.07, gain: 0.25, at: A, verb: 0.15, delay: i * 0.11 + Math.random() * 0.04 });
+        break;
       case 'hurt': this.noise({ type: 'bandpass', freq: 900, q: 1, dur: 0.25, gain: 0.3 }); break;
       case 'cough': for (let i = 0; i < 2; i++) this.noise({ type: 'bandpass', freq: 700, q: 1.5, dur: 0.18, gain: 0.35, delay: i * 0.25 }); break;
       case 'breath': this.noise({ type: 'bandpass', freq: 900, q: 1, dur: 0.6, gain: 0.08, attack: 0.25, verb: 0 }); break;

@@ -48,6 +48,15 @@ Every floor hides a **heavy-duty stapler** and boxes of staples (1 box in the of
 - A hit **stuns Mr. Thatch for exactly 10 seconds**: he can't move, attack or chase, and loses track of you afterwards. The staple **sticks where it hit** on his model (same spot for every player) and the staples fall out when he recovers. More hits during a stun stick but never extend or restart it.
 - The server decides every shot, hit and stun (`Room.handleFire`, `CEO.staple`); staplers and staples carry over between floors with their ammo.
 
+## The Lurker
+Something lives in the lockers and cabinets. **Hide too long** and it wakes up: **10 seconds before** the limit you hear it breathing and scratching behind you (only the hider hears it). At the limit it **bursts out, shoves you into the hall facing the locker, and takes half your current health** (it never kills on its own). Teammates nearby see it lunge out. That locker stays off-limits for 20 s, and hiding time only drains back slowly once you're out (1 s per second), so hopping straight into the next locker doesn't reset the clock.
+
+| Difficulty | Easy | Normal | Medium | Hard |
+|---|---|---|---|---|
+| Time you can hide | 45 s | 35 s | 30 s | 25 s |
+
+Tuning: `LURKER` and `DIFFICULTIES.hideLimit` in `shared/constants.js`; server logic in `Room.lurker`; the creature is `public/js/lurker.js`.
+
 ## Music
 Tracks from `music/`: `Basesoundtrack.mp3` during normal play, `chase.mp3` whenever Mr. Thatch is actively chasing anyone (not while he's blinded or stunned), `elevator.mp3` while you're in an elevator (and on the ride up in the ending). Priority is chase › elevator › base; only one track is ever audible (the old one fades out before the next fades in), base and elevator resume where they paused, and a chase theme only restarts for a new chase. See `public/js/music.js`.
 
@@ -56,10 +65,10 @@ The host picks it under **Lobby settings** (Normal by default; locked once the s
 
 | Difficulty | Monster |
 |---|---|
-| Easy | 0.5× speed, **cannot open doors** (doors you leave open still let him through) |
+| Easy | 0.5× speed, **cannot open doors** (doors you leave open still let him through); 45 s in a locker before the Lurker wakes |
 | Normal | standard behaviour and speed |
 | Medium | 1.2× speed, faster detection and sharper hearing, checks more lockers, searches longer, hunts more often, opens doors faster |
-| Hard | **1.5× speed**, Medium's senses, and he **crawls through vents** after you (vents are no longer safe) |
+| Hard | **1.5× speed**, Medium's senses, and he **crawls through vents** after you (vents are no longer safe); only 25 s in a locker |
 
 Tuning lives in `shared/constants.js` (`DIFFICULTIES`).
 

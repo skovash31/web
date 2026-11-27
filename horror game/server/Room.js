@@ -3,7 +3,7 @@
 import { Floor } from './Floor.js';
 import { CEO } from './CEO.js';
 import { LEVELS, LEVEL_BY_ID } from '../shared/levels/index.js';
-import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY, STAPLER, COFFEE, MEDKIT, NOTHING, GUN } from '../shared/constants.js';
+import { MAX_PLAYERS, TICK_RATE, PLAYER, NOISE, DIFFICULTIES, DEFAULT_DIFFICULTY, STAPLER, COFFEE, MEDKIT, NOTHING, GUN, LURKER } from '../shared/constants.js';
 const WEAPONS = { stapler: STAPLER, gun: GUN };
 const AMMO_NAME = { staples: 'staples', gunammo: 'bullets' };
 import { toTile, C, tileCenter } from '../shared/grid.js';
@@ -130,7 +130,7 @@ export class Room {
     let i = 0;
     for (const p of this.players.values()) {
       const sp = this.floor.spawnPoint(i++);
-      Object.assign(p, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, alive: true, hidden: null, health: PLAYER.maxHealth, invuln: p.god ? 99999 : 3, grace: 2, frozen: false, reload: null, lastFire: 0, boostUntil: 0 });
+      Object.assign(p, { x: sp.x, y: 0, z: sp.z, vx: 0, vz: 0, alive: true, hidden: null, health: PLAYER.maxHealth, invuln: p.god ? 99999 : 3, grace: 2, frozen: false, reload: null, lastFire: 0, boostUntil: 0, hideTime: 0, lurkWarned: false });
       p.yaw = Math.PI; // face out of the elevator / into the room
     }
     // Recreate carried consumables in the new floor's item table.
@@ -243,6 +243,7 @@ export class Room {
           this.noise(p.x, p.z, r, p, 'step', true);
         }
       }
+      this.lurker(p, dt);
       // Slow health regeneration away from hazards.
       if (p.health < PLAYER.maxHealth && (this.floor.time - (p.lastHazard ?? -99)) > 5) p.health = Math.min(PLAYER.maxHealth, p.health + 2 * dt);
     }
@@ -250,6 +251,34 @@ export class Room {
     if (this.ceo) this.ceo.update(dt);
     if (this.phase !== 'playing') return;
     this.io.to(this.code).volatile.emit('snap', this.snapshot());
+  }
+
+  // Hiding too long wakes the Lurker in the locker: a warning, then it shoves you out and
+  // takes half your current health.
+  hideLimit() { return (DIFFICULTIES[this.settings.difficulty] || DIFFICULTIES[DEFAULT_DIFFICULTY]).hideLimit; }
+
+  lurker(p, dt) {
+    if (!p.hidden) { p.hideTime = Math.max(0, (p.hideTime || 0) - LURKER.recover * dt); p.lurkWarned = false; return; }
+    p.hideTime = (p.hideTime || 0) + dt;
+    const limit = this.hideLimit();
+    if (!p.lurkWarned && p.hideTime >= limit - LURKER.warnBefore) {
+      p.lurkWarned = true;
+      p.socket.emit('ev', { type: 'lurker', phase: 'warn', spot: p.hidden, left: Math.max(0, limit - p.hideTime) });
+    }
+    if (p.hideTime >= limit) this.lurkerAttack(p);
+  }
+
+  lurkerAttack(p) {
+    const spot = this.floor.entity(p.hidden);
+    const spotId = p.hidden;
+    const before = p.health;
+    if (!p.god) p.health = Math.max(1, Math.round(p.health * (1 - LURKER.damage)));
+    p.hideTime = 0; p.lurkWarned = false;
+    p.lastHazard = this.floor.time; // no instant regen
+    if (spot) spot.lurkUntil = this.floor.time + LURKER.spotCooldown;
+    this.floor.leaveHide(p, { shove: true });
+    this.broadcastEvent({ type: 'lurker', phase: 'attack', id: p.id, spot: spotId, hp: Math.round(p.health), lost: Math.round(before - p.health) });
+    this.noise(p.x, p.z, NOISE.sprint, p, 'lurker');
   }
 
   snapshot() {
@@ -622,6 +651,8 @@ export class Room {
     if (cmd.god === true) { p.invuln = 99999; p.god = true; }
     if (cmd.report) p.socket.emit('debugInfo', { difficulty: this.settings.difficulty, ceo: this.ceo ? { difficulty: this.ceo.difficulty, run: this.ceo.cfg.run, vents: !!this.floor.grid.ceoVents } : null, items: this.floor ? [...this.floor.items.values()].map((it) => ({ id: it.id, x: it.x, z: it.z })) : [] });
     if (cmd.god === false) { p.invuln = 0; p.god = false; }
+    if (Number.isFinite(cmd.hideTime)) { p.hideTime = +cmd.hideTime; p.lurkWarned = false; }
+    if (Number.isFinite(cmd.hp)) p.health = Math.max(1, Math.min(PLAYER.maxHealth, +cmd.hp));
     if (cmd.tp) { p.x = +cmd.tp.x; p.z = +cmd.tp.z; p.y = 0; p.grace = 0.6; p.socket.emit('teleport', { x: p.x, y: 0, z: p.z }); }
     if (cmd.ceoGoto && this.ceo) { this.ceo.state = 'investigate'; this.ceo.urgent = false; this.ceo.lastKnown = { ...cmd.ceoGoto }; this.ceo.setGoal(cmd.ceoGoto.x, cmd.ceoGoto.z); }
     if (cmd.kill) this.killPlayer(p, 'debug');

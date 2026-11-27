@@ -267,6 +267,19 @@ export class UI {
     el.innerHTML = `SPECTATING <b>${escapeHtml(name)}</b><br><span class="hint">[click] next teammate · you'll be back on the next floor</span>`;
   }
   letterbox(on) { $('letterbox').classList.toggle('on', on); document.body.classList.toggle('cinematic', on); }
+  // A red slash across the screen when the Lurker gets you.
+  lurkerHit() {
+    let el = document.getElementById('lurker-hit');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'lurker-hit';
+      el.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:40;opacity:0;transition:opacity 1.6s ease-out;background:radial-gradient(ellipse at center, rgba(120,0,0,0) 30%, rgba(150,0,0,.75) 100%), linear-gradient(115deg, transparent 44%, rgba(170,0,0,.55) 46%, transparent 48%, transparent 52%, rgba(170,0,0,.45) 54%, transparent 56%)';
+      document.body.appendChild(el);
+    }
+    el.style.transition = 'none'; el.style.opacity = '1';
+    void el.offsetWidth;
+    el.style.transition = 'opacity 1.6s ease-out'; el.style.opacity = '0';
+  }
   hiding(on) { $('slats').classList.toggle('hidden', !on); $('hide-hint').classList.toggle('hidden', !on); $('crosshair').classList.toggle('hidden', on); }
   clickToPlay(on) { $('click-to-play').classList.toggle('hidden', !on); }
 

@@ -19,6 +19,7 @@ import { Cutscenes } from './cutscene.js';
 import { Finale } from './ending.js';
 import { Music } from './music.js';
 import { StapleFX } from './staples.js';
+import { Lurkers } from './lurker.js';
 import { isMobile, TouchControls } from './mobile.js';
 
 // ---------------------------------------------------------------- setup
@@ -187,6 +188,7 @@ net.on('floor', async (f) => {
   const changed = f.floorIndex !== G.floorIndex;
   G.floorIndex = f.floorIndex;
   G.level = LEVEL_BY_ID[f.state.levelId];
+  lurkers.clear();
   G.grid = world.build(f.state.levelId, f.state);
   remotes.grid = G.grid;
   G.flags = world.flags;
@@ -327,8 +329,33 @@ function handleEvent(e) {
         if (e.on) story.hide();
         me.hidden = e.on ? e.spot : null;
         if (e.on && ent) { me.hideYaw = ent.facing; me.yaw = ent.facing; me.pitch = 0; }
-        if (!e.on) { me.vel.set(0, 0, 0); me.crouch = false; }
+        if (!e.on) { me.vel.set(0, 0, 0); me.crouch = false; lurkers.stopWarn(); }
         ui.hiding(e.on);
+      }
+      break;
+    }
+    case 'lurker': {
+      // the thing in the lockers: a warning while you're hiding, then it shoves you out
+      if (e.phase === 'warn') {
+        if (me.hidden !== e.spot) break;
+        lurkers.warn(e.spot, e.left);
+        story.say('you', pick(["Something's breathing in here... behind me.", "There's something in here with me.", 'Something just moved. Behind me. In HERE.']), { priority: true });
+        ui.message("You've been hiding too long. Something in here is waking up.", 4, true);
+      } else if (e.phase === 'attack') {
+        if (e.id === G.myId) lurkers.stopWarn();
+        lurkers.attack(e.spot);
+        const ent = world.ents.get(e.spot);
+        const d = ent ? Math.hypot(ent.x - me.pos.x, ent.z - me.pos.z) : 99;
+        if (e.id === G.myId) {
+          me.shake = Math.max(me.shake, 1.5);
+          G.lastHealth = e.hp; me.health = e.hp; audio.play('hurt');
+          ui.lurkerHit?.();
+          setTimeout(() => story.say('you', pick(["WHAT WAS THAT?! It threw me out!", 'It had me! It actually had me!', "I'm not going back in there. Not that one."]), { priority: true }), 900);
+        } else if (d < 14) {
+          me.shake = Math.max(me.shake, 0.4);
+          const who = G.roster.find((p) => p.id === e.id)?.name || 'Someone';
+          story.say('you', `Something just threw ${who} out of that locker!`, { priority: true, key: 'lurkseen', cooldown: 10 });
+        }
       }
       break;
     }
@@ -412,6 +439,7 @@ function handleEvent(e) {
 }
 
 function onMyDeath(cause) {
+  lurkers.stopWarn();
   me.alive = false;
   me.hidden = null;
   me.flashlight = false;
@@ -638,8 +666,9 @@ function updateStun(dt) {
 
 // ---------------------------------------------------------------- the stapler
 const stapleFX = new StapleFX(scene, remotes, audio);
+const lurkers = new Lurkers(scene, world, audio);
 const music = new Music(audio);
-Object.assign(window.__dbg, { music, stapleFX, G, hands: { useHeld, swapHands, reloadHeld, dropHeld, toggleFlashlight } });
+Object.assign(window.__dbg, { music, stapleFX, lurkers, G, hands: { useHeld, swapHands, reloadHeld, dropHeld, toggleFlashlight } });
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const raycaster = new THREE.Raycaster();
 const STAPLE_BONES = new Set(['Torso', 'Neck', 'Head', 'Arm_R', 'Arm_L', 'Forearm_R', 'Forearm_L', 'Leg_R', 'Leg_L', 'Shin_R', 'Shin_L']);
@@ -952,6 +981,7 @@ function frame(now) {
   G.dt = dt;
   updateAmmoHud();
   stapleFX.update(dt);
+  lurkers.update(dt);
   updateMusic();
   const ceo = remotes.ceoState;
   const dC = ceo ? Math.hypot(ceo.x - camera.position.x, ceo.z - camera.position.z) : 99;
