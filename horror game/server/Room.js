@@ -289,6 +289,7 @@ export class Room {
         f: (p.crouch ? 1 : 0) | (p.sprint ? 2 : 0) | (p.moving ? 4 : 0) | (p.flashlight ? 8 : 0) | (p.alive ? 16 : 0),
         h: p.hidden, hp: Math.round(p.health),
         ...(p.handMain ? { hm: p.handMain } : {}), ...(p.handOff ? { ho: p.handOff } : {}),
+        ...(p.vr ? { vr: p.vr } : {}),
       });
     }
     const c = this.ceo;
@@ -310,6 +311,10 @@ export class Room {
     // what's in their hands, so teammates see it (only kinds they actually carry)
     const holds = (k) => (typeof k === 'string' && p.inventory.some((iid) => this.floor.items.get(iid)?.kind === k) ? k : null);
     p.handMain = holds(s.hm); p.handOff = holds(s.ho);
+    // VR edition: head + hand poses (relative to the player's x/z) so teammates see the gorilla's arms
+    const pose = (a) => (Array.isArray(a) && a.length === 7 && a.every((n) => Number.isFinite(n) && Math.abs(n) < 10) ? a.map((n) => +n.toFixed(3)) : null);
+    p.vr = s.vr && typeof s.vr === 'object' ? { h: pose(s.vr.h), l: pose(s.vr.l), r: pose(s.vr.r) } : null;
+    if (p.vr && !(p.vr.h && p.vr.l && p.vr.r)) p.vr = null;
     if (p.hidden) { p.moving = false; return; }
     const nx = num(s.x, p.x), ny = num(s.y, p.y), nz = num(s.z, p.z);
     const now = Date.now();

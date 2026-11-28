@@ -103,6 +103,12 @@ export function createServer({ port = PORT, debug = DEBUG, quiet = false } = {})
     socket.on('fire', (d) => { if (room && player && d && typeof d === 'object') room.handleFire(player, d); });
     socket.on('reload', (id) => { if (room && player) room.handleReload(player, typeof id === 'string' ? id : null); });
     socket.on('chat', (t) => { if (room && player) room.chat(player, t); });
+    // Proximity voice chat: 16 kHz mono mu-law frames (base64). The server only relays them;
+    // each listener turns the volume down with distance (and muffles it through walls).
+    socket.on('voice', (d) => {
+      if (!room || !player || room.phase === 'ended' || typeof d !== 'string' || d.length > 6000) return;
+      socket.to(room.code).volatile.emit('voice', { id: player.id, d });
+    });
     socket.on('debug', (cmd) => { if (room && player) room.debugCmd(player, cmd); });
     socket.on('disconnect', leave);
   });

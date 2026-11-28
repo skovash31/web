@@ -21,6 +21,7 @@ import { Music } from './music.js';
 import { StapleFX } from './staples.js';
 import { Lurkers } from './lurker.js';
 import { isMobile, TouchControls } from './mobile.js';
+import { Voice } from './voice.js';
 
 // ---------------------------------------------------------------- setup
 const canvas = document.getElementById('game');
@@ -69,6 +70,8 @@ const modelsReady = loadModels((p) => { document.getElementById('load-pct').text
 modelsReady.then(() => me.refreshViewModel());
 
 const net = io({ transports: ['websocket', 'polling'] });
+const voice = new Voice(audio, net);
+window.__voice = voice;
 const G = {
   phase: 'menu', myId: null, lobby: null, level: null, grid: null, flags: new Set(), journal: [],
   roster: [], alive: new Map(), floorIndex: -1, specIdx: 0, deathCam: null, lastSend: 0,
@@ -90,15 +93,15 @@ function enterLobby(res) {
   ui.lobby(res.lobby, G.myId);
   ui.screen('lobby');
 }
-$('btn-create').onclick = () => { audio.init(); net.emit('createRoom', { name: nameVal() }, enterLobby); };
+$('btn-create').onclick = () => { audio.init(); voice.enableMic(); net.emit('createRoom', { name: nameVal() }, enterLobby); };
 $('btn-join').onclick = () => {
-  audio.init();
+  audio.init(); voice.enableMic();
   const code = $('join-code').value.trim().toUpperCase();
   if (code.length !== 5) return ui.error('Room codes have 5 characters.');
   net.emit('joinRoom', { code, name: nameVal() }, enterLobby);
 };
 $('btn-continue').onclick = () => {
-  audio.init();
+  audio.init(); voice.enableMic();
   const code = $('save-code').value.trim().toUpperCase();
   if (code.length !== 5) return ui.error('Enter the 5-character code of your previous lobby.');
   net.emit('createRoom', { name: nameVal(), saveCode: code }, enterLobby);
@@ -135,6 +138,7 @@ document.addEventListener('pointerlockerror', () => { if (G.phase === 'playing')
 
 function lockPointer() {
   audio.init();
+  voice.enableMic();
   if (G.wantFs && !document.fullscreenElement && document.documentElement.requestFullscreen) {
     document.documentElement.requestFullscreen().then(() => navigator.keyboard?.lock?.(['KeyW', 'KeyT', 'KeyN', 'KeyS', 'KeyD', 'ControlLeft', 'ControlRight']).catch(() => {})).catch(() => {});
   }
@@ -170,6 +174,10 @@ window.addEventListener('keydown', (e) => {
   if ((e.code === 'KeyT' || e.code === 'Enter') && !ui.modal) { e.preventDefault(); openChat(); }
   if ((ui.modal === 'note' && (e.code === 'KeyE' || e.code === 'Escape')) || (ui.modal === 'journal' && (e.code === 'KeyJ' || e.code === 'Escape'))) { ui.closeModal(); input.pressed.delete('KeyE'); if (!input.locked) lockPointer(); return; }
   if (e.code === 'KeyJ' && !ui.modal) ui.openJournal(G.journal);
+  if (e.code === 'KeyV' && !ui.modal) {
+    if (!voice.mic) ui.message(voice.status === 'needs-https' ? 'Voice chat: your mic only works on http://localhost or https. You can still hear everyone.' : voice.status === 'denied' ? 'Voice chat: microphone access was blocked.' : 'Voice chat: no microphone yet.', 4);
+    else { voice.setMuted(!voice.muted); ui.message(voice.muted ? 'Mic muted (V to unmute).' : 'Mic on — people near you can hear you.', 2.5); }
+  }
 });
 
 // ---------------------------------------------------------------- networking
@@ -433,7 +441,7 @@ function handleEvent(e) {
       if (e.by === G.myId && e.hit) story.say('you', e.weapon === 'gun' ? (e.stunned ? "He's DOWN. That'll hold him for a while!" : 'Hit him!') : e.stunned ? pick(['Got him!', 'Right in him — MOVE!', "He's down! Go, go!"]) : 'Another one in him.', { priority: true, key: 'staplehit', cooldown: e.stunned ? 0 : 6 });
       break;
     }
-    case 'left': G.alive.delete(e.id); break;
+    case 'left': G.alive.delete(e.id); voice.remove(e.id); break;
     default: break;
   }
 }
@@ -906,6 +914,7 @@ function frame(now) {
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 1) { G.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
   story.update();
+  updateVoice();
   if (G.phase === 'finale') { finale.update(dt); return; }
   if (G.phase !== 'playing' || !G.grid) return;
 
@@ -997,6 +1006,23 @@ function frame(now) {
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
+
+// proximity voice: in the lobby everyone is heard clearly, in game by distance and walls
+function updateVoice() {
+  if (!audio.ctx) return;
+  const L = camera.position;
+  if (G.phase !== 'playing') { voice.update(L, () => ({ x: L.x, y: L.y, z: L.z - 1 })); return; }
+  voice.update(L, (id) => {
+    const r = remotes.players.get(id);
+    const s = r?.state;
+    if (!s) return null;
+    if (!s.alive && me.alive) return null; // the retained can only talk to each other
+    const h = s.vr?.h;
+    const p = h ? { x: s.x + h[0], y: h[1], z: s.z + h[2] } : { x: s.x, y: (s.y || 0) + (s.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand), z: s.z };
+    p.blocked = !!G.grid && !G.grid.lineOfSight(L.x, L.z, p.x, p.z, (i) => world.doorOpen(i));
+    return p;
+  });
+}
 
 function updateCamera(dt, t) {
   if (cutscenes.applyCamera(dt)) { me.hideHands(); return; }
